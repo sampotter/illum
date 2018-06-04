@@ -39,8 +39,6 @@ def build_heap_level(X, Xscaled=None):
     return heap_level
 
 def build_octree_heap(X, lmax):
-    # TODO: make it so that we don't need to 
-
     heap = build_heap_level(X)
 
     def build_octree_heap_rec(leaf, inds, level):
@@ -64,7 +62,23 @@ def build_octree_heap(X, lmax):
 # shell. When we cast rays, we will need to map them into spherical
 # coordinates, or intersect them with the warped cells of the octree
 
+def leaves(h, inds=[], yield_inds=False):
+    for o, cell in enumerate(h):
+        if type(cell) == list:
+            yield from leaves(cell, inds + [o], yield_inds)
+        elif type(cell) == np.ndarray:
+            if yield_inds:
+                yield inds + [o], cell
+            else:
+                yield cell
+
 class Octree(object):
     def __init__(self, data, lmax):
         self._data01 = util.scale01(data)
         self._heap = build_octree_heap(self._data01, lmax)
+
+    def __iter__(self):
+        return leaves(self._heap)
+
+    def leaves(self, yield_inds=False):
+        return leaves(self._heap, yield_inds)
