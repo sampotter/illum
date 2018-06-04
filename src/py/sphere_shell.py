@@ -76,12 +76,13 @@ def horizon(v, f, vn, tri_ind):
 def plot_horizon(angle0, llim0, angle1=None, llim1=None):
     cat = np.concatenate
     plt.figure()
+    plt.plot([0, 2*np.pi], [np.pi/2, np.pi/2], linewidth=1, color='k')
     plt.plot(cat([angle0, [2*np.pi]]),
-             np.cos(cat([llim0, [llim0[0]]])), '*-b')
+             cat([llim0, [llim0[0]]]), '*-b')
     if angle1 is not None and llim1 is not None:
         plt.plot(cat([angle1, [2*np.pi]]),
-                 np.cos(cat([llim1, [llim1[0]]])), '*-g')
+                 cat([llim1, [llim1[0]]]), '*-g')
     plt.xlim(0, 2*np.pi)
-    plt.ylim(-1, 1)
+    plt.ylim(0, np.pi)
     plt.show()
     
