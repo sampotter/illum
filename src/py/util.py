@@ -14,6 +14,12 @@ contains them.
     zmin, zmax = arr[:, 2].min(), arr[:, 2].max()
     return (xmin, xmax), (ymin, ymax), (zmin, zmax)
 
+def extent_contains_point(p, xext, yext, zext):
+    return \
+        xext[0] <= p[0] and p[0] <= xext[1] and \
+        yext[0] <= p[1] and p[1] <= yext[1] and \
+        zext[0] <= p[2] and p[2] <= zext[1]
+
 def ray_intersects_box(p, n, xext, yext, zext):
     '''Takes a 3-vector `p' and a normal `n' and checks if the ray
 emanating from `p' in direction of `n' intersects the axis-aligned
@@ -93,3 +99,15 @@ Trumbore.
         return -1
     t = inv_det*np.dot(edge2, qvec)
     return t
+
+def find_first_true(lst, pred=None):
+    if pred is None:
+        pred = lambda x: x
+    if len(lst) == 1:
+        return 0 if pred(lst[0]) else 1
+    i = int(len(lst)/2)
+    if pred(lst[i]):
+        return find_first_true(lst[:i])
+    else:
+        return i + find_first_true(lst[i:])
+
