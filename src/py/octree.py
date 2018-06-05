@@ -23,7 +23,7 @@ def get_offset(inds):
     return np.array([
         bool2off(vec) for vec in list(zip(*[splits[k] for k in inds]))])
 
-def get_octree_children(tri, l):
+def get_octree_children(parent, tri, l):
     '''Builds a level of an octree heap. The input `X' is an Nx3 numpy
 array, where each row corresponds to a point in 3-space. The function
 returns a length 8 list where each element is either None (indicating
@@ -50,7 +50,7 @@ subarray of `X'.
             level[i] = None
         else:
             inds = tri._inds[sel]
-            level[i] = OctreeNode(tri.incident_faces(inds, sel=sel), l=l)
+            level[i] = OctreeNode(parent, tri.incident_faces(inds, sel=sel), l=l)
 
     return level
 
@@ -85,12 +85,13 @@ class Triangulation(object):
             inds=inds)
 
 class OctreeNode(object):
-    def __init__(self, tri, l=0):
+    def __init__(self, parent, tri, l=0):
+        self._parent = parent
         if l == 0:
             self._children = None
             self._tri = tri
         else:
-            self._children = get_octree_children(tri, l - 1)
+            self._children = get_octree_children(self, tri, l - 1)
             self._tri = None
         self._extent = util.get_extent(tri._verts)
 
@@ -134,7 +135,7 @@ class Octree(object):
     def __init__(self, tri, lmax=None):
         self._tri = tri
         self._lmax = default_lmax(tri) if lmax is None else lmax
-        self._root = OctreeNode(tri, l=self._lmax)
+        self._root = OctreeNode(None, tri, l=self._lmax)
 
     def leaves(self):
         return self._root.leaves()
