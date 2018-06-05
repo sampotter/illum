@@ -73,6 +73,9 @@ class OctreeNode(object):
             
         self._extent = util.get_extent(X)
 
+    def is_leaf_node(self):
+        return self._children is None
+
     def __getitem__(self, *args):
         print(args)
         if type(args[0]) is int:
@@ -82,3 +85,16 @@ class OctreeNode(object):
             if len(inds) == 1:
                 return self._children[inds[0]]
             return self._children[inds[0]].__getitem__(inds[1:])
+
+    def ray_tri_intersections(self, p, n):
+        if not ray_intersects_box(p, n, self._extent):
+            return
+        if self.is_leaf_node():
+            for ind in self._inds:
+                # TODO: need to store faces
+                pass
+        else:
+            for node in self._children:
+                if node is None:
+                    continue
+                yield from node.ray_tris(p, n)
