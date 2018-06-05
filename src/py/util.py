@@ -81,15 +81,15 @@ Trumbore.
     pvec = np.cross(n, edge2)
     det = np.dot(edge1, pvec)
     if det > -tol and det < tol:
-        return False
+        return -1
     inv_det = 1.0/det
     tvec = p - v0
     u = inv_det*np.dot(tvec, pvec)
     if u < 0 or u > 1:
-        return False
+        return -1
     qvec = np.cross(tvec, edge1)
     v = inv_det*np.dot(n, qvec)
     if v < 0 or u + v > 1:
-        return False
+        return -1
     t = inv_det*np.dot(edge2, qvec)
     return t
