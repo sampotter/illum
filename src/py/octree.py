@@ -23,7 +23,7 @@ def get_offset(inds):
     return np.array([
         bool2off(vec) for vec in list(zip(*[splits[k] for k in inds]))])
 
-def get_octree_children(X, inds, l):
+def get_octree_children(tri, l):
     '''Builds a level of an octree heap. The input `X' is an Nx3 numpy
 array, where each row corresponds to a point in 3-space. The function
 returns a length 8 list where each element is either None (indicating
@@ -32,6 +32,8 @@ subarray of `X'.
 
     '''
     level = [[] for _ in range(8)]
+
+    X = tri._verts
 
     xext, yext, zext = util.get_extent(X)
 
@@ -47,37 +49,63 @@ subarray of `X'.
         if len(sel) == 0:
             level[i] = None
         else:
-            level[i] = OctreeNode(X[sel, :], inds=inds[sel], l=l)
+            inds = tri._inds[sel]
+            level[i] = OctreeNode(tri.incident_faces(inds, sel=sel), l=l)
 
     return level
 
 class Triangulation(object):
-    def __init__(self, verts, faces, normals, albedos):
+    def __init__(self, verts, faces, normals, albedos, inds=None):
         self._verts = verts
         self._faces = faces
         self._normals = normals
         self._albedos = albedos
+        self._inds = np.arange(self.num_faces()) if inds is None else inds
+
+    def num_faces(self):
+        return self._faces.shape[0]
+
+    def num_verts(self):
+        return self._verts.shape[0]
+
+    def incident_faces(self, inds, sel=None):
+        # TODO: this isn't a great way to do this, but we'll use it
+        # for now...
+        mask = np.zeros((self.num_faces(), 3), dtype=np.bool)
+        for ind in inds:
+            mask = np.logical_or(mask, self._faces == ind)
+        mask = np.where(np.logical_or(mask[:, 0], mask[:, 1], mask[:, 2]))[0]
+        if sel is None:
+            sel = inds
+        return Triangulation(
+            self._verts[sel],
+            self._faces[mask, :],
+            self._normals[sel],
+            self._albedos[sel],
+            inds=inds)
 
 class OctreeNode(object):
-    def __init__(self, X, inds=None, l=0):
-        if inds is None:
-            inds = np.arange(X.shape[0], dtype=np.int32)
+    def __init__(self, tri, l=0):
         if l == 0:
             self._children = None
-            self._X = X
-            self._inds = inds
+            self._tri = tri
         else:
-            self._children = get_octree_children(X, inds, l - 1)
-            self._X = None
-            self._inds = None
-            
-        self._extent = util.get_extent(X)
+            self._children = get_octree_children(tri, l - 1)
+            self._tri = None
+        self._extent = util.get_extent(tri._verts)
 
     def is_leaf_node(self):
         return self._children is None
 
+    def leaves(self):
+        if self.is_leaf_node():
+            yield self
+        else:
+            for child in self._children:
+                if child is not None:
+                    yield from child.leaves()
+
     def __getitem__(self, *args):
-        print(args)
         if type(args[0]) is int:
             return self._children[args[0]]
         else:
@@ -86,15 +114,33 @@ class OctreeNode(object):
                 return self._children[inds[0]]
             return self._children[inds[0]].__getitem__(inds[1:])
 
+    def ray_tri_intersections(self, p, n, tri):
+        if ray_intersects_box(p, n, *self._extent):
+            if self.is_leaf_node():
+                for face in self._tri._faces:
+                    t = ray_tri_intersection(p, n, *tri._verts[face])
+                    if t >= 0:
+                        yield face
+            else:
+                for node in self._children:
+                    if node is not None:
+                        yield from node.ray_tri_intersections(p, n, tri)
+
+def default_lmax(tri):
+    nfaces = tri._faces.shape[0]
+    return int(np.round(np.log(nfaces)/np.log(8)))
+
+class Octree(object):
+    def __init__(self, tri, lmax=None):
+        self._tri = tri
+        self._lmax = default_lmax(tri) if lmax is None else lmax
+        self._root = OctreeNode(tri, l=self._lmax)
+
+    def leaves(self):
+        return self._root.leaves()
+
+    def __getitem__(self, *args):
+        return self._root.__getitem__(*args)
+
     def ray_tri_intersections(self, p, n):
-        if not ray_intersects_box(p, n, self._extent):
-            return
-        if self.is_leaf_node():
-            for ind in self._inds:
-                # TODO: need to store faces
-                pass
-        else:
-            for node in self._children:
-                if node is None:
-                    continue
-                yield from node.ray_tris(p, n)
+        return self._root.ray_tri_intersections(p, n, self._tri)
