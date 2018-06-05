@@ -51,6 +51,13 @@ subarray of `X'.
 
     return level
 
+class Triangulation(object):
+    def __init__(self, verts, faces, normals, albedos):
+        self._verts = verts
+        self._faces = faces
+        self._normals = normals
+        self._albedos = albedos
+
 class OctreeNode(object):
     def __init__(self, X, inds=None, l=0):
         if inds is None:
