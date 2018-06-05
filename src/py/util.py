@@ -69,3 +69,27 @@ bounding box (AABB) defined by the extents `xext', `yext', and
                 return True
 
     return False
+
+def ray_tri_intersection(p, n, v0, v1, v2, tol=np.finfo(np.float32).eps):
+    '''Fast method to intersect a ray with a triangle, based on the paper
+"Fast, Minimum Storage Ray/Triangle Intersection" by Moller and
+Trumbore.
+
+    '''
+    edge1 = v1 - v0
+    edge2 = v2 - v0
+    pvec = np.cross(n, edge2)
+    det = np.dot(edge1, pvec)
+    if det > -tol and det < tol:
+        return False
+    inv_det = 1.0/det
+    tvec = p - v0
+    u = inv_det*np.dot(tvec, pvec)
+    if u < 0 or u > 1:
+        return False
+    qvec = np.cross(tvec, edge1)
+    v = inv_det*np.dot(n, qvec)
+    if v < 0 or u + v > 1:
+        return False
+    t = inv_det*np.dot(edge2, qvec)
+    return t
