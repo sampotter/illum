@@ -139,6 +139,11 @@ class OctreeNode(object):
             self._tri = None
         self._extent = util.get_extent(tri._verts)
 
+    def get_tri(self):
+        return self._tri
+
+    tri = property(get_tri)
+
     def get_extent(self):
         return self._extent
 
