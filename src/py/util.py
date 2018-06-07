@@ -14,11 +14,54 @@ contains them.
     zmin, zmax = arr[:, 2].min(), arr[:, 2].max()
     return (xmin, xmax), (ymin, ymax), (zmin, zmax)
 
+def extent_to_point_matrix(extent):
+    xext, yext, zext = extent
+    return np.array([
+        [xext[0], yext[0], zext[0]],
+        [xext[0], yext[0], zext[1]],
+        [xext[0], yext[1], zext[0]],
+        [xext[0], yext[1], zext[1]],
+        [xext[1], yext[0], zext[0]],
+        [xext[1], yext[0], zext[1]],
+        [xext[1], yext[1], zext[0]],
+        [xext[1], yext[1], zext[1]]])
+
+def extent_corners(extent):
+    xext, yext, zext = extent
+    yield np.array([xext[0], yext[0], zext[0]])
+    yield np.array([xext[0], yext[0], zext[1]])
+    yield np.array([xext[0], yext[1], zext[0]])
+    yield np.array([xext[0], yext[1], zext[1]])
+    yield np.array([xext[1], yext[0], zext[0]])
+    yield np.array([xext[1], yext[0], zext[1]])
+    yield np.array([xext[1], yext[1], zext[0]])
+    yield np.array([xext[1], yext[1], zext[1]])
+
+def extent_intersects_halfplane(p, n, extent):
+    return np.any((extent_to_point_matrix(octree.extent) - p)@n >= 0)
+
 def extent_contains_point(p, xext, yext, zext):
     return \
         xext[0] <= p[0] and p[0] <= xext[1] and \
         yext[0] <= p[1] and p[1] <= yext[1] and \
         zext[0] <= p[2] and p[2] <= zext[1]
+
+def oct2dirs(oct_ind):
+    assert(0 <= oct_ind and oct_ind < 8)
+    b0 = oct_ind % 2
+    oct_ind = int(oct_ind/2)
+    b1 = oct_ind % 2
+    b2 = int(oct_ind/2)
+    return bool(b2), bool(b1), bool(b0)
+
+def subextent(oct_ind, xext, yext, zext):
+    dx, dy, dz = oct2dirs(oct_ind)
+    def sub(d, ext):
+        if d:
+            return (ext[0] + ext[1])/2, ext[1]
+        else:
+            return ext[0], (ext[0] + ext[1])/2
+    return sub(dx, xext), sub(dy, yext), sub(dz, zext)
 
 def ray_intersects_box(p, n, xext, yext, zext):
     '''Takes a 3-vector `p' and a normal `n' and checks if the ray

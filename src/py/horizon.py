@@ -1,7 +1,9 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+from mayavi.mlab import *
 from mpl_toolkits.mplot3d import Axes3D
+from numpy.polynomial.legendre import leggauss
 
 from obj import *
 from octree import *
@@ -13,51 +15,29 @@ v, f, vn, va = readobj(path)
 
 tri = Triangulation(v, f, vn, va)
 
-octree = Octree(tri, lmax=2)
+octree = Octree(tri)
 
-oct_ind = (0, 0)
+oct_ind = (7, 3, 0, 4, 0)
 node = octree[oct_ind]
 
 # Pick a random face
-face = node.tri.faces[np.random.randint(node.tri.faces.shape[0])]
+face_ind = np.random.choice(node.tri.face_inds)
 
-nphi = 100
+nphi = 16
 
 # Phi and Theta parametrize the upper hemisphere from bottom to top
 
 Phi = np.linspace(0, 2*np.pi, nphi, endpoint=False)
-# Theta = np.linspace(0, np.pi/2, ntheta, endpoint=True)
-Theta = np.arccos(np.polynomial.legendre.leggauss(int(nphi/2) + 1)[0][int(nphi/4):])
+Theta = np.arccos(leggauss(int(nphi/2) + 1)[0][int(nphi/4):])
 
 ntheta = len(Theta)
 
-def face_centroid(face):
-    return np.mean(v[face], 0)
-
-def face_normal(face):
-    v0, v1, v2 = v[face]
-    n = np.cross(v1 - v0, v2 - v0)
-    return n/np.linalg.norm(n)
-
-def face_tangent(face):
-    t = v[face][1] - v[face][0]
-    t /= np.linalg.norm(t)
-    return t
-
-n = face_normal(face)
-
-p = face_centroid(face)
+n = tri.face_normal(face_ind)
+p = tri.face_centroid(face_ind)
 p += np.finfo(np.float32).eps*n
-
-if np.any(np.sign(p) != np.sign(n)):
-    n = -n
-
-t = face_tangent(face)
-
-# Get bivector
+if np.any(np.sign(p) != np.sign(n)): n = -n
+t = tri.face_tangent(face_ind)
 b = np.cross(t, n)
-
-# Build matrix for Frenet frame
 F = np.array([t, b, n])
 
 def get_normal(phi, theta):
@@ -91,8 +71,6 @@ fig = plt.figure()
 
 ax = fig.add_subplot(1, 2, 1, projection='3d')
 
-# ax = Axes3D(fig, ax=axes[0])
-
 ax.scatter(p[0] + Ns[:, 0], p[1] + Ns[:, 1], p[2] + Ns[:, 2],
            facecolors='none', edgecolors='black')
 
@@ -114,12 +92,21 @@ faces = faces.reshape(M, N)
 
 ax.plot_trisurf(verts[:, 0], verts[:, 1], verts[:, 2], triangles=faces)
 
-ax.set_xlim([p[0] - 1, p[0] + 1])
-ax.set_ylim([p[1] - 1, p[1] + 1])
-ax.set_zlim([p[2] - 1, p[2] + 1])
+xlim = (p[0] - 1, p[0] + 1)
+ylim = (p[1] - 1, p[1] + 1)
+zlim = (p[2] - 1, p[2] + 1)
+
+ax.set_xlim(xlim)
+ax.set_ylim(ylim)
+ax.set_zlim(zlim)
 
 ax = fig.add_subplot(1, 2, 2)
 
 ax.imshow(vis)
 
 fig.show()
+
+v = tri.verts
+f = tri.faces_in_extent((xlim, ylim, zlim))[0]
+x, y, z = v.T
+triangular_mesh(x, y, z, faces)
