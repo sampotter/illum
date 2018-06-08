@@ -1,0 +1,6 @@
+[submodule "src/cpp/fastbvh"]
+	path = src/cpp/fastbvh
+	url = https://github.com/sampotter/Fast-BVH.git
+[submodule "src/cpp/tinyobjloader"]
+	path = src/cpp/tinyobjloader
+	url = https://github.com/sampotter/tinyobjloader.git
