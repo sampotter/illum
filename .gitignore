@@ -1,3 +1,4 @@
+*.mtl
 *.obj
 .#*
 __pycache__
