@@ -23,7 +23,7 @@ def get_offset(inds):
     return np.array([
         bool2off(vec) for vec in list(zip(*[splits[k] for k in inds]))])
 
-def get_octree_children(parent, tri, base_tri, l):
+def get_octree_children(parent, tri, base_tri, thresh):
     '''Builds a level of an octree heap. The input `X' is an Nx3 numpy
 array, where each row corresponds to a point in 3-space. The function
 returns a length 8 list where each element is either None (indicating
@@ -55,7 +55,7 @@ subarray of `X'.
                 tri.albedos[sel],
                 face_inds=face_inds,
                 vert_inds=tri.vert_inds[sel])
-            level[i] = OctreeNode(parent, subtri, l=l)
+            level[i] = OctreeNode(parent, subtri, thresh)
 
     return level
 
@@ -130,12 +130,14 @@ class Triangulation(object):
         if base_tri is None:
             base_tri = self
 
+        faces, face_inds = [], []
+        mins, maxs = np.array(extent).T
+
         for face, face_ind in zip(self.faces, self.face_inds):
             v = base_tri.verts[face]
             if np.any(np.all(np.logical_and(mins <= v, v <= maxs), 1)):
                 faces.append(face)
                 face_inds.append(face_ind)
-
         return \
             np.array(faces, dtype=np.int32), \
             np.array(face_inds, dtype=np.int32)
@@ -147,14 +149,15 @@ def ray_intersects_octree_node(p, n, node):
         return util.ray_intersects_box(p, n, *node.extent)
 
 class OctreeNode(object):
-    def __init__(self, parent, tri, l=0):
+    def __init__(self, parent, tri, thresh):
         self._parent = parent
-        if l == 0:
+        print(tri.num_faces)
+        if tri.num_faces <= thresh:
             self._children = None
             self._tri = tri
         else:
             base_tri = self.containing_octree.tri
-            self._children = get_octree_children(self, tri, base_tri, l - 1)
+            self._children = get_octree_children(self, tri, base_tri, thresh)
             self._tri = None
         self._extent = util.get_extent(tri._verts)
 
@@ -229,15 +232,15 @@ class OctreeNode(object):
                     if child is not None:
                         yield from child.get_node_containing_vertex(p)
 
-def default_lmax(tri):
-    nfaces = tri._faces.shape[0]
-    return int(np.round(np.log(nfaces)/np.log(8)))
+def default_thresh(tri):
+    return np.ceil(np.log(tri.num_faces)/np.log(8))
 
 class Octree(object):
-    def __init__(self, tri, lmax=None):
+    def __init__(self, tri, thresh=None):
         self._tri = tri
-        self._lmax = default_lmax(tri) if lmax is None else lmax
-        self._root = OctreeNode(self, tri, l=self._lmax)
+        self._thresh = default_thresh(tri) if thresh is None else thresh
+        print(self._thresh)
+        self._root = OctreeNode(self, tri, thresh=self._thresh)
 
     def get_tri(self):
         return self._tri

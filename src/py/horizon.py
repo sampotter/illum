@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from mayavi.mlab import *
 from mpl_toolkits.mplot3d import Axes3D
 from numpy.polynomial.legendre import leggauss
 
@@ -15,10 +14,13 @@ v, f, vn, va = readobj(path)
 
 tri = Triangulation(v, f, vn, va)
 
-octree = Octree(tri)
+print('Building octree...')
+octree = Octree(tri, thresh=100)
 
-oct_ind = (7, 3, 0, 4, 0)
-node = octree[oct_ind]
+# oct_ind = (7, 3, 0, 4, 0)
+# node = octree[oct_ind]
+
+node = next(octree.leaves)
 
 # Pick a random face
 face_ind = np.random.choice(node.tri.face_inds)
@@ -105,8 +107,3 @@ ax = fig.add_subplot(1, 2, 2)
 ax.imshow(vis)
 
 fig.show()
-
-v = tri.verts
-f = tri.faces_in_extent((xlim, ylim, zlim))[0]
-x, y, z = v.T
-triangular_mesh(x, y, z, faces)
