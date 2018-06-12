@@ -1,13 +1,17 @@
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
-#include <fastbvh>
+// #include <omp.h>
 
+#include <armadillo>
+#include <fastbvh>
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 
@@ -43,11 +47,30 @@ std::vector<Object *> get_objects(tinyobj::attrib_t const & attrib,
       vertices[3*i2.vertex_index + 2]
     };
 
-    auto const n = Vector3 {
-      normals[3*i0.normal_index],
-      normals[3*i0.normal_index + 1],
-      normals[3*i0.normal_index + 2]
-    };
+    // If the face normal index isn't set, then we can compute the
+    // face normal by taking the cross product of the triangle
+    // edges. To ensure a consistent orientation, we can take the dot
+    // product between the candidate face normal and one of the vertex
+    // normals.
+
+    Vector3 n;
+    if (i0.normal_index >= 0) {
+      n = Vector3 {
+        normals[3*i0.normal_index],
+        normals[3*i0.normal_index + 1],
+        normals[3*i0.normal_index + 2]
+      };
+    } else {
+      n = normalize((v1 - v0)^(v2 - v0));
+      Vector3 n0 {
+        normals[3*i0.vertex_index],
+        normals[3*i0.vertex_index + 1],
+        normals[3*i0.vertex_index + 2]
+      };
+      if (n*n0 < 0) {
+        n = -n;
+      }
+    }
 
     objects.push_back(new Tri(v0, v1, v2, n, i));
   }
@@ -55,93 +78,143 @@ std::vector<Object *> get_objects(tinyobj::attrib_t const & attrib,
   return objects;
 }
 
-std::vector<int> get_num_vis_per_tri(std::vector<Object *> const & objects) {
-  std::vector<int> num_vis_per_tri(objects.size(), 0);
+void
+build_A_zero(std::vector<Object *> const & objects, arma::sp_umat & A) {
+  assert(A.is_empty());
+  auto nfaces = objects.size();
+  A.set_size(nfaces, nfaces);
+  IntersectionInfo unused;
+  for (int j = 0; j < nfaces; ++j) {
+    auto obj_j = objects[j];
+    auto p_j = obj_j->getCentroid();
+    auto n_j = obj_j->getNormal(unused);
+    auto rhs = p_j*n_j;
+    for (int i = 0; i < nfaces; ++i) {
+      auto obj_i = objects[i];
+      auto p_i = obj_i->getCentroid();
+      auto lhs = p_i*n_j;
+      if (lhs > rhs) {
+        A(i, j) = true;
+      }
+    }
+  }
+}
 
+double
+get_bounding_radius(Tri const * tri) {
+  auto p = tri->getCentroid();
+  return std::max(
+    length(tri->v0 - p),
+    std::max(
+      length(tri->v1 - p),
+      length(tri->v2 - p)));
+}
+
+std::vector<double>
+get_bounding_radii(std::vector<Object *> const & objects) {
+  std::vector<double> R;
+  auto const nfaces = objects.size();
+  R.reserve(nfaces);
+  for (auto const * obj: objects) {
+    R.push_back(get_bounding_radius(static_cast<Tri const *>(obj)));
+  }
+  return R;
+}
+
+void
+build_A_using_bounding_radii(std::vector<Object *> const & objects,
+                             arma::sp_umat & A)
+{
+  assert(A.is_empty());
+
+  auto nfaces = objects.size();
+  A.set_size(nfaces, nfaces);
+
+  auto const R = get_bounding_radii(objects);
+
+  IntersectionInfo unused;
+  for (int j = 0; j < nfaces; ++j) {
+    auto obj_j = objects[j];
+    auto p_j = obj_j->getCentroid();
+    auto n_j = obj_j->getNormal(unused);
+    auto rhs = p_j*n_j;
+    for (int i = 0; i < nfaces; ++i) {
+      auto obj_i = objects[i];
+      auto p_i = obj_i->getCentroid();
+      auto lhs = p_i*n_j;
+      if (lhs > rhs - R[i]) {
+        A(i, j) = true;
+      }
+    }
+  }
+}
+
+void
+compute_V(arma::sp_umat const & A, arma::sp_umat & V) {
+  V = A.t()%A;
+}
+
+void
+fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
+               arma::sp_umat const & V, arma::sp_umat & A) {
   IntersectionInfo info;
 
+  arma::umat locations;
+
   for (int i = 0; i < objects.size(); ++i) {
-    auto const obj_i = objects[i];
-    auto const n_i = obj_i->getNormal(info);
-    auto const p_i = obj_i->getCentroid();
-    auto const d_i = n_i*p_i - eps;
+    std::cout << i; // << std::endl;
+    
+    auto * obj_i = objects[i];
+    auto n_i = obj_i->getNormal(info);
+    auto p_i = obj_i->getCentroid();
+    p_i = p_i + 1e-7*n_i; // perturb to avoid self-intersection
+
+    std::unordered_set<int> hits;
 
     for (int j = 0; j < objects.size(); ++j) {
-      if (i == j) {
+      if (!V(i, j)) {
         continue;
       }
       
-      auto const obj_j = objects[j];
-      auto const p_j = obj_j->getCentroid();
-
-      if (n_i*p_j <= d_i) {
-        continue;
-      }
-
-      auto const n_j = obj_j->getNormal(info);
-      auto const n_ij = normalize(p_j - p_i);
-
-      if (n_i*n_ij > 0 && n_j*n_ij < 0) {
-        ++num_vis_per_tri[i];
-      }
-    }
-  }
-
-  return num_vis_per_tri;
-}
-
-std::vector<std::vector<int>> get_vis(std::vector<Object *> const & objects,
-                                      BVH const & bvh) {
-  std::vector<std::vector<int>> vis;
-
-  IntersectionInfo info;
-
-  // Traverse all of the faces of the triangle mesh.
-  for (int i = 0; i < objects.size(); ++i) {
-    auto * obj_i = objects[i];
-    
-    std::vector<int> indices;
-
-    auto const p_i = obj_i->getCentroid() + 1e-6*obj_i->getNormal(info);
-
-    for (int j = 0; j < i; ++j) {
-
       auto * obj_j = objects[j];
+      auto p_j = obj_j->getCentroid();
+      auto n_ij = normalize(p_j - p_i);
 
-      auto const p_j = obj_j->getCentroid();
-      auto const n_ij = normalize(p_j - p_i);
-
-      // Cast a ray from the ith face to the jth face
+      /**
+       * Cast a ray to each "facing" face and store the index of the
+       * face that was actually hit in `hits'.
+       */
       if (bvh.getIntersection(Ray(p_i, n_ij), &info, false)) {
-        int index = static_cast<Tri const *>(info.object)->index;
-        if (index == i) {
-          continue;
-        }
-        auto const res = std::find(indices.begin(), indices.end(), index);
-        if (res == indices.end()) {
-          indices.push_back(index);
-        }
+        hits.insert(static_cast<Tri const *>(info.object)->index);
       }
     }
 
-    vis.push_back(indices);
+    /**
+     * TODO: the way we're building `locations' isn't ideal, but it
+     * seems to be passable for now.
+     */
+    for (int hit: hits) {
+      locations << i << hit << arma::endr;
+    }
+    std::cout << ": " << hits.size() << std::endl;
   }
 
-  return vis;
+  arma::uvec values(locations.n_rows, arma::fill::ones);
+  A = arma::sp_umat(locations.t(), values);
 }
 
 int main(int argc, char * argv[])
 {
-  std::string filename = "../data/Phobos_Ernst_decimated50k.obj";;
-  if (argc >= 2) {
-	filename = argv[1];
-  }
+  // std::string filename = "../../../../data/SHAPE0.OBJ";
+  std::string filename = "../../../../data/SHAPE0_dec5000.obj";
+  if (argc >= 2) filename = argv[1];
 
   int shape_index = 0;
-  if (argc >= 3) {
-    shape_index = std::atoi(argv[2]);
-  }
+  if (argc >= 3) shape_index = std::atoi(argv[2]);
 
+  /**
+   * Use tinyobjloader to load selected obj file.
+   */
   tinyobj::attrib_t attrib;
   std::vector<tinyobj::shape_t> shapes;
   std::vector<tinyobj::material_t> materials;
@@ -149,36 +222,34 @@ int main(int argc, char * argv[])
   bool ret = tinyobj::LoadObj(
     &attrib, &shapes, &materials, &err, filename.c_str());
 
+  /**
+   * Build a vector of objects for use with our bounding volume
+   * hierarchy library (fastbvh).
+   */
   tinyobj::shape_t & shape = shapes[shape_index];
-  
   std::vector<Object *> objects = get_objects(attrib, shape);
 
+  /**
+   * Build the BVH.
+   */
   BVH bvh(&objects);
+
+  //////////////////////////////////////////////////////////////////////////////
+  // sandbox
+  //
+
+  arma::sp_umat A;
+  // build_A_zero(objects, A);
+  build_A_using_bounding_radii(objects, A);
+
+  arma::sp_umat V;
+  compute_V(A, V);
+
+  A.reset();
+  fix_visibility(bvh, objects, V, A);
   
-  IntersectionInfo info;
+  std::cout << arma::accu(V) << std::endl;
 
-  for (int i = 0; i < objects.size(); ++i) {
-    auto obj_i = objects[i];
-
-    auto p_i = obj_i->getCentroid();
-    auto n_i = obj_i->getNormal(info);
-
-    for (int j = 0; j < objects.size(); ++j) {
-      auto obj_j = objects[j];
-
-      auto p_j = obj_j->getCentroid();
-      auto n_j = obj_j->getNormal(info);
-
-      auto n_ij = normalize(p_j - p_i);
-
-      // if (n_i*n_ij > 0 && n_j*n_ij < 0) {
-      if (n_i*n_ij > 0) {
-        std::cout << " 1";
-      } else {
-        std::cout << " 0";
-      }
-    }
-
-    std::cout << std::endl;
-  }
+  // A.save(arma::hdf5_name("vis.h5", "A_zero"));
+  V.save("vis.bin");
 }

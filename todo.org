@@ -2,7 +2,11 @@
 
   - [ ] Make visibility matrix
   - [ ] Create elevation maps for entire model
-  - [X] Plot number of visible neighbors on model
+  - [-] Plot number of visible neighbors on model
 	- [X] Make plot in Python
 	- [ ] Get it working
   - [ ] SPICE sun position/size/projection
+  - [ ] Make sure to build fastbvh using SSE
+  - [ ] Make fastbvh also use double precision
+	- [ ] make fastbvh templates
+	- [ ] add tests

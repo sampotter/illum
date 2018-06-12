@@ -1,9 +1,11 @@
+#!/usr/bin/env python3
+
 import scipy.sparse
 
 from mayavi import mlab
 from obj import *
 
-path = '../../data/vis1.txt'
+path = '../../data/num_vis.txt'
 
 f = open(path, 'r')
 
