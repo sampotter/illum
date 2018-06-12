@@ -159,3 +159,22 @@ fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1)
 ax.imshow(V_R)
 plt.show()
+
+################################################################################
+# Getting data from Armadillo
+
+import h5py
+
+path = '../cpp/build/Release/out.h5'
+
+with h5py.File(path, 'r') as f:
+    indices = f['rowind'][:].flatten()
+    indptr = f['colptr'][:].flatten()
+
+data = np.ones(indices.shape, dtype=np.bool)
+A = scipy.sparse.csc_matrix((data, indices, indptr), dtype=np.bool)
+
+fig = plt.figure()
+ax = fig.add_subplot(1, 1, 1)
+ax.imshow(np.array(A.todense()))
+fig.show()

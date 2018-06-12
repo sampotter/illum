@@ -5,7 +5,6 @@
 #include <fstream>
 #include <iostream>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 // #include <omp.h>
@@ -72,7 +71,7 @@ std::vector<Object *> get_objects(tinyobj::attrib_t const & attrib,
       }
     }
 
-    objects.push_back(new Tri(v0, v1, v2, n, i));
+    objects.push_back(new Tri(v0, v1, v2, n, i/3));
   }
 
   return objects;
@@ -154,22 +153,24 @@ compute_V(arma::sp_umat const & A, arma::sp_umat & V) {
   V = A.t()%A;
 }
 
-void
+std::pair<arma::uvec, arma::uvec>
 fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
-               arma::sp_umat const & V, arma::sp_umat & A) {
+               arma::sp_umat const & V) {
   IntersectionInfo info;
 
-  arma::umat locations;
+  std::vector<arma::uword> rowind_vec, colptr_vec;
+  colptr_vec.reserve(V.n_cols);
+
+  int col = 0;
+  colptr_vec.push_back(col);
 
   for (int i = 0; i < objects.size(); ++i) {
-    std::cout << i; // << std::endl;
-    
     auto * obj_i = objects[i];
     auto n_i = obj_i->getNormal(info);
     auto p_i = obj_i->getCentroid();
     p_i = p_i + 1e-7*n_i; // perturb to avoid self-intersection
 
-    std::unordered_set<int> hits;
+    std::vector<arma::uword> hits;
 
     for (int j = 0; j < objects.size(); ++j) {
       if (!V(i, j)) {
@@ -185,22 +186,25 @@ fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
        * face that was actually hit in `hits'.
        */
       if (bvh.getIntersection(Ray(p_i, n_ij), &info, false)) {
-        hits.insert(static_cast<Tri const *>(info.object)->index);
+        auto index = static_cast<Tri const *>(info.object)->index;
+        auto lb = std::lower_bound(hits.begin(), hits.end(), index);
+        if (lb == hits.end() || *lb != index) {
+          hits.insert(lb, index);
+        }
       }
     }
 
-    /**
-     * TODO: the way we're building `locations' isn't ideal, but it
-     * seems to be passable for now.
-     */
-    for (int hit: hits) {
-      locations << i << hit << arma::endr;
-    }
-    std::cout << ": " << hits.size() << std::endl;
+    col += hits.size();
+    colptr_vec.push_back(col);
+
+    rowind_vec.insert(rowind_vec.end(), hits.begin(), hits.end());
   }
 
-  arma::uvec values(locations.n_rows, arma::fill::ones);
-  A = arma::sp_umat(locations.t(), values);
+  arma::uvec rowind(rowind_vec), colptr(colptr_vec);
+  // arma::uvec values(rowind.n_elem, arma::fill::ones);
+  // A = arma::sp_umat(rowind, colptr, values, V.n_rows, V.n_cols);
+
+  return {rowind, colptr};
 }
 
 int main(int argc, char * argv[])
@@ -246,10 +250,10 @@ int main(int argc, char * argv[])
   compute_V(A, V);
 
   A.reset();
-  fix_visibility(bvh, objects, V, A);
-  
-  std::cout << arma::accu(V) << std::endl;
 
-  // A.save(arma::hdf5_name("vis.h5", "A_zero"));
-  V.save("vis.bin");
+  arma::uvec rowind, colptr;
+  std::tie(rowind, colptr) = fix_visibility(bvh, objects, V);
+  
+  rowind.save(arma::hdf5_name("out.h5", "rowind", arma::hdf5_opts::append));
+  colptr.save(arma::hdf5_name("out.h5", "colptr", arma::hdf5_opts::append));
 }

@@ -7,3 +7,4 @@ GTAGS
 *.obj
 .#*
 __pycache__
+misc
