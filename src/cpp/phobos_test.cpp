@@ -90,63 +90,52 @@ build_A_zero(std::vector<Object *> const & objects, arma::sp_umat & A) {
   }
 }
 
-double
-get_bounding_radius(Tri const * tri) {
-  auto p = tri->getCentroid();
-  return std::max(
-    length(tri->v0 - p),
-    std::max(
-      length(tri->v1 - p),
-      length(tri->v2 - p)));
-}
+arma::sp_umat compute_A(std::vector<Object *> const & objects) {
+  int nfaces = objects.size();
 
-std::vector<double>
-get_bounding_radii(std::vector<Object *> const & objects) {
-  std::vector<double> R;
-  auto const nfaces = objects.size();
-  R.reserve(nfaces);
-  for (auto const * obj: objects) {
-    R.push_back(get_bounding_radius(static_cast<Tri const *>(obj)));
+  auto const get_bounding_radius = [] (Tri const * tri) {
+    auto p = tri->getCentroid();
+    return std::max(
+      length(tri->v0 - p),
+      std::max(
+        length(tri->v1 - p),
+        length(tri->v2 - p)));
+  };
+
+  arma::vec R(nfaces);
+  for (int i = 0; i < nfaces; ++i) {
+    auto tri_i = static_cast<Tri const *>(objects[i]);
+    R(i) = get_bounding_radius(tri_i);
   }
-  return R;
-}
 
-void
-build_A_using_bounding_radii(std::vector<Object *> const & objects,
-                             arma::sp_umat & A)
-{
-  assert(A.is_empty());
+  auto const P = [&] (int i) {
+    return objects[i]->getCentroid();
+  };
 
-  auto nfaces = objects.size();
-  A.set_size(nfaces, nfaces);
+  auto const N = [&] (int i) {
+    IntersectionInfo unused;
+    return objects[i]->getNormal(unused);
+  };
 
-  auto const R = get_bounding_radii(objects);
-
-  IntersectionInfo unused;
+  arma::sp_umat A(nfaces, nfaces);
   for (int j = 0; j < nfaces; ++j) {
-    auto obj_j = objects[j];
-    auto p_j = obj_j->getCentroid();
-    auto n_j = obj_j->getNormal(unused);
-    auto rhs = p_j*n_j;
     for (int i = 0; i < nfaces; ++i) {
-      auto obj_i = objects[i];
-      auto p_i = obj_i->getCentroid();
-      auto lhs = p_i*n_j;
-      if (lhs > rhs - R[i]) {
-        A(i, j) = true;
+      if ((P(i) - P(j))*N(j) > -R(i)) {
+        A(i, j) = 1;
       }
     }
   }
+
+  return A;
 }
 
-void
-compute_V(arma::sp_umat const & A, arma::sp_umat & V) {
-  V = A.t()%A;
+arma::sp_umat compute_V(arma::sp_umat const & A) {
+  return A.t()%A;
 }
 
-void
+arma::sp_umat
 fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
-               arma::sp_umat const & V, arma::sp_umat & A) {
+               arma::sp_umat const & V) {
   IntersectionInfo info;
 
   std::vector<arma::uword> rowind_vec, colptr_vec;
@@ -185,7 +174,7 @@ fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
       }
     }
 
-    std::cout << hits.size() << std::endl;
+    std::cout << hits.size() << "/" << V.col(i).n_nonzero << std::endl;
 
     col += hits.size();
     colptr_vec.push_back(col);
@@ -195,7 +184,7 @@ fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
 
   arma::uvec rowind(rowind_vec), colptr(colptr_vec);
   arma::uvec values(rowind.n_elem, arma::fill::ones);
-  A = arma::sp_umat(rowind, colptr, values, V.n_rows, V.n_cols);
+  return arma::sp_umat(rowind, colptr, values, V.n_rows, V.n_cols);
 }
 
 /**
@@ -284,23 +273,52 @@ trace_horizon(Tri const * tri,
   return horizon;
 }
 
+arma::mat
+build_horizon_map(std::vector<Object *> const & objects,
+                   BVH const & bvh, int nphi)
+{
+  auto phis = arma::linspace(0, 2*arma::datum::pi, nphi);
+  arma::mat H(nphi, objects.size());
+  // TODO: maybe can replace this w/ foreach
+  // TODO: openmp
+  for (int ind = 0; ind < objects.size(); ++ind) {
+    // std::cout << ind << std::endl;
+    Tri const * tri = static_cast<Tri const *>(objects[ind]);
+    H.col(ind) = trace_horizon(tri, bvh, phis);
+  }
+  return H;
+}
+
 template <typename T>
 void
 write_csc_inds(arma::SpMat<T> const & S, const char * path) {
   arma::Col<T> values((T *) S.values, S.n_nonzero);
-  values.save(arma::hdf5_name(path, "values"));
+  values.save(arma::hdf5_name(path, "values", arma::hdf5_opts::append));
 
   arma::uvec rowind(S.row_indices, S.n_nonzero);
-  values.save(arma::hdf5_name(path, "rowind"));
+  rowind.save(arma::hdf5_name(path, "rowind", arma::hdf5_opts::append));
 
   arma::uvec indptr(S.col_ptrs, S.n_cols + 1);
-  values.save(arma::hdf5_name(path, "indptr"));
+  indptr.save(arma::hdf5_name(path, "indptr", arma::hdf5_opts::append));
+}
+
+void write_coo(arma::sp_umat const & S, const char * path) {
+  std::ofstream f;
+  f.open(path);
+  for (int j = 0; j < S.n_cols; ++j) {
+    for (int i = 0; i < S.n_rows; ++i) {
+      if (S(i, j)) {
+        f << i << ", " << j << ", " << S(i, j) << std::endl;
+      }
+    }
+  }
+  f.close();
 }
 
 int main(int argc, char * argv[])
 {
-  std::string filename = "../../../../data/SHAPE0.OBJ";
-  // std::string filename = "../../../../data/SHAPE0_dec5000.obj";
+  // std::string filename = "../../../../data/SHAPE0.OBJ";
+  std::string filename = "../../../../data/SHAPE0_dec5000.obj";
   if (argc >= 2) filename = argv[1];
 
   int shape_index = 0;
@@ -322,50 +340,31 @@ int main(int argc, char * argv[])
    */
   tinyobj::shape_t & shape = shapes[shape_index];
   std::vector<Object *> objects = get_objects(attrib, shape);
+  std::vector<Object *> bvh_objects(objects.begin(), objects.end());
 
   auto nfaces = objects.size();
-
-  std::cout << *static_cast<Tri *>(objects[0]);
 
   /**
    * Build the BVH.
    */
-  BVH bvh(&objects);
+  BVH bvh(&bvh_objects);
 
   //////////////////////////////////////////////////////////////////////////////
   // visibility sandbox
   //
 
-  // arma::sp_umat A;
-  // // build_A_zero(objects, A);
-  // build_A_using_bounding_radii(objects, A);
+  auto A_before = compute_A(objects);
+  // write_csc_inds(A_before, "A_before.h5");
+  write_coo(A_before, "A_before.coo");
 
-  // arma::sp_umat V;
-  // compute_V(A, V);
-
-  // A.reset();
-  // fix_visibility(bvh, objects, V, A);
-  
-  // rowind.save(arma::hdf5_name("out.h5", "rowind", arma::hdf5_opts::append));
-  // colptr.save(arma::hdf5_name("out.h5", "colptr", arma::hdf5_opts::append));
-
-  // write_csc_inds(A, "tmp.h5");
+  auto A_after = fix_visibility(bvh, objects, compute_V(A_before));
+  // write_csc_inds(A_after, "A_after.h5");
+  write_coo(A_after, "A_after.coo");
 
   //////////////////////////////////////////////////////////////////////////////
   // horizon sandbox
 
-  int nphi = 41;
-  auto phis = arma::linspace(0, 2*arma::datum::pi, nphi);
-
-  arma::mat horizons(nphi, nfaces);
-
-  // TODO: maybe can replace this w/ foreach
-  // TODO: openmp
-  for (int ind = 0; ind < nfaces; ++ind) {
-    std::cout << ind << std::endl;
-    Tri const * tri = static_cast<Tri const *>(objects[ind]);
-    horizons.col(ind) = trace_horizon(tri, bvh, phis);
-  }
-
-  horizons.save(arma::hdf5_name("horizons.h5", "horizons"));
+  // int nphi = 41;
+  // auto H = build_horizon_map(objects, bvh, nphi);
+  // H.save(arma::hdf5_name("horizons.h5", "horizons"));
 }
