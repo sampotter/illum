@@ -52,23 +52,14 @@ std::vector<Object *> get_objects(tinyobj::attrib_t const & attrib,
     // product between the candidate face normal and one of the vertex
     // normals.
 
-    Vector3 n;
-    if (i0.normal_index >= 0) {
-      n = Vector3 {
-        normals[3*i0.normal_index],
-        normals[3*i0.normal_index + 1],
-        normals[3*i0.normal_index + 2]
-      };
-    } else {
-      n = normalize((v1 - v0)^(v2 - v0));
-      Vector3 n0 {
-        normals[3*i0.vertex_index],
-        normals[3*i0.vertex_index + 1],
-        normals[3*i0.vertex_index + 2]
-      };
-      if (n*n0 < 0) {
-        n = -n;
-      }
+    Vector3 n = normalize((v1 - v0)^(v2 - v0));
+    Vector3 n0 {
+      normals[3*i0.vertex_index],
+      normals[3*i0.vertex_index + 1],
+      normals[3*i0.vertex_index + 2]
+    };
+    if (n*n0 < 0) {
+      n = -n;
     }
 
     objects.push_back(new Tri(v0, v1, v2, n, i/3));
@@ -153,9 +144,9 @@ compute_V(arma::sp_umat const & A, arma::sp_umat & V) {
   V = A.t()%A;
 }
 
-std::pair<arma::uvec, arma::uvec>
+void
 fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
-               arma::sp_umat const & V) {
+               arma::sp_umat const & V, arma::sp_umat & A) {
   IntersectionInfo info;
 
   std::vector<arma::uword> rowind_vec, colptr_vec;
@@ -194,6 +185,8 @@ fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
       }
     }
 
+    std::cout << hits.size() << std::endl;
+
     col += hits.size();
     colptr_vec.push_back(col);
 
@@ -201,10 +194,117 @@ fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
   }
 
   arma::uvec rowind(rowind_vec), colptr(colptr_vec);
-  // arma::uvec values(rowind.n_elem, arma::fill::ones);
-  // A = arma::sp_umat(rowind, colptr, values, V.n_rows, V.n_cols);
+  arma::uvec values(rowind.n_elem, arma::fill::ones);
+  A = arma::sp_umat(rowind, colptr, values, V.n_rows, V.n_cols);
+}
 
-  return {rowind, colptr};
+/**
+ * Compute Frenet frame for triangle. The convention is that the
+ * (n)ormal is just the normal attached to the triangle, the (t)angent
+ * vector is (v1 - v0)/|v1 - v0|, and the bivector is just b = t x n.
+ */
+arma::mat
+get_frenet_frame(Tri const * tri) {
+  arma::mat frame(3, 3);
+  
+  arma::vec n = {tri->n[0], tri->n[1], tri->n[2]};
+  frame.col(2) = arma::normalise(n); // (n)ormal
+  
+  arma::vec t = {
+    tri->v1[0] - tri->v0[0],
+    tri->v1[1] - tri->v0[1],
+    tri->v1[2] - tri->v0[2]
+  };
+  frame.col(1) = arma::normalise(t); // (t)angent
+
+  frame.col(0) = arma::cross(frame.col(1), frame.col(2)); // (b)ivector
+
+  return frame;
+}
+
+/**
+ * ind: index of face for which we're tracing a horizon
+ * objects: vector of triangles
+ * bvh: bounding volume hierarchy used to accelerated raytracing
+ * phis: vector of horizon abscissae (values in [0, 2pi))
+ * thetas: theta values over which to search for horizon
+ * 
+ * TODO: add a perturbation parameter (amount to lift observer away
+ * from ground to get higher vantage point)
+ *
+ * returns: vector of horizon angles (thetas) for each abscissa phi
+ */
+arma::vec
+trace_horizon(arma::uword ind,
+              std::vector<Object *> const & objects,
+              BVH const & bvh,
+              arma::vec const & phis,
+              arma::vec const & thetas)
+{
+  IntersectionInfo info;
+
+  auto * tri = static_cast<Tri const *>(objects[ind]);
+
+  auto p = tri->getCentroid();
+  auto n = tri->getNormal(info);
+  p = p + 1e-5*n;
+
+  {
+    bvh.getIntersection(Ray(p, n), &info, false);
+    assert(info.object != objects[ind]);
+    
+    bvh.getIntersection(Ray(p, -n), &info, false);
+    assert(info.object == objects[ind]);
+  }
+
+  auto F = get_frenet_frame(tri);
+
+  auto const get_ray_d = [&] (double ph, double th) {
+    arma::vec v(3);
+    v(0) = std::cos(ph)*std::sin(th);
+    v(1) = std::sin(ph)*std::sin(th);
+    v(2) = std::cos(th);
+    v = F*v;
+    return Vector3(v(0), v(1), v(2));
+  };
+
+  {
+    auto d = get_ray_d(0, 0);
+    // assert(!bvh.getIntersection(Ray(p, d), &info, true));
+    // assert(!bvh.getIntersection(Ray(p, d), &info, false));
+
+    IntersectionInfo info;
+    bvh.getIntersection(Ray(p, d), &info, false);
+  }
+
+  arma::vec horizon(arma::size(phis));
+  for (int i = 0; i < phis.n_elem; ++i) {
+    auto ph = phis(i);
+    double h = arma::datum::pi; // initially pointing down
+    for (int j = 0; j < thetas.n_elem; ++j) {
+      auto th = thetas(j);
+      Ray ray(p, get_ray_d(ph, th));
+      if (bvh.getIntersection(ray, &info, true)) {
+        h = std::min(h, th);
+      }
+    }
+    horizon(i) = h;
+  }
+
+  return horizon;
+}
+
+template <typename T>
+void
+write_csc_inds(arma::SpMat<T> const & S, const char * path) {
+  arma::Col<T> values((T *) S.values, S.n_nonzero);
+  values.save(arma::hdf5_name(path, "values"));
+
+  arma::uvec rowind(S.row_indices, S.n_nonzero);
+  values.save(arma::hdf5_name(path, "rowind"));
+
+  arma::uvec indptr(S.col_ptrs, S.n_cols + 1);
+  values.save(arma::hdf5_name(path, "indptr"));
 }
 
 int main(int argc, char * argv[])
@@ -233,27 +333,53 @@ int main(int argc, char * argv[])
   tinyobj::shape_t & shape = shapes[shape_index];
   std::vector<Object *> objects = get_objects(attrib, shape);
 
+  auto nfaces = objects.size();
+
+  std::cout << *static_cast<Tri *>(objects[0]);
+
   /**
    * Build the BVH.
    */
   BVH bvh(&objects);
 
   //////////////////////////////////////////////////////////////////////////////
-  // sandbox
+  // visibility sandbox
   //
 
-  arma::sp_umat A;
-  // build_A_zero(objects, A);
-  build_A_using_bounding_radii(objects, A);
+  // arma::sp_umat A;
+  // // build_A_zero(objects, A);
+  // build_A_using_bounding_radii(objects, A);
 
-  arma::sp_umat V;
-  compute_V(A, V);
+  // arma::sp_umat V;
+  // compute_V(A, V);
 
-  A.reset();
-
-  arma::uvec rowind, colptr;
-  std::tie(rowind, colptr) = fix_visibility(bvh, objects, V);
+  // A.reset();
+  // fix_visibility(bvh, objects, V, A);
   
-  rowind.save(arma::hdf5_name("out.h5", "rowind", arma::hdf5_opts::append));
-  colptr.save(arma::hdf5_name("out.h5", "colptr", arma::hdf5_opts::append));
+  // rowind.save(arma::hdf5_name("out.h5", "rowind", arma::hdf5_opts::append));
+  // colptr.save(arma::hdf5_name("out.h5", "colptr", arma::hdf5_opts::append));
+
+  // write_csc_inds(A, "tmp.h5");
+
+  //////////////////////////////////////////////////////////////////////////////
+  // horizon sandbox
+
+  int nphi = 21;
+  auto phis = arma::linspace(0, 2*arma::datum::pi, nphi);
+
+  int ntheta = 11;
+  auto thetas = arma::linspace(arma::datum::pi, 0, ntheta);
+
+  arma::mat horizons(nphi, nfaces);
+
+  // TODO: maybe can replace this w/ foreach
+  // TODO: openmp
+  // for (int ind = 0; ind < nfaces; ++ind) {
+  //   std::cout << ind << std::endl;
+  //   horizons.col(ind) = trace_horizon(ind, objects, bvh, phis, thetas);
+  // }
+
+  horizons.col(0) = trace_horizon(0, objects, bvh, phis, thetas);
+
+  horizons.save(arma::hdf5_name("horizons.h5", "horizons"));
 }
