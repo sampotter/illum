@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 
 import matplotlib.pyplot as plt
+
+plt.ion()
+
 import numpy as np
 import scipy.sparse
 import trimesh
 
 from itertools import product
 from mayavi import mlab
+
+from sparse import *
 
 tri = trimesh.load('../../data/SHAPE0_dec5000.obj')
 
