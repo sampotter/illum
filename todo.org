@@ -11,6 +11,16 @@
 
 ** TODO Prune visibility matrix by shooting rays
 
+** TODO Fix C++ visibility matrix
+   :LOGBOOK:
+   CLOCK: [2018-06-13 Wed 15:01]
+   :END:
+
+   - [X] fix BVH permutation
+   - [ ] get back to only dealing w/ sparse matrices
+   - [ ] write pre-A and corrected A to disk in CSC format (in HDF5 files)
+   - [ ] load into Python using sparse.py and plot (6 plots total)
+
 ** TODO Export pruned vis. matrix to HDF5 and load in Python
 
 ** TODO Plot vis. matrix on 3D mesh
@@ -31,3 +41,5 @@
    :END:
 
 ** DONE Write horizons out and plot in Python
+
+** TODO Compressing the horizon map
