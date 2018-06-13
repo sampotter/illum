@@ -72,43 +72,13 @@ for j in range(nfaces):
 # V_eps = np.multiply(A_eps.T, A_eps)
 V_R = np.multiply(A_R.T, A_R)
 
-##################
-# Vert visibility
-# TODO: pretty sure there's a bug
-#
-
-# B = np.zeros((nfaces, nverts), dtype=np.bool)
-# for f in range(nfaces):
-#     print(f)
-#     B[f, :] = (V - P[f, :])@N[f, :] > 0
-#     # TODO: try this, would be cheaper
-#     # B[f, :] = V@N[f, :] > P[f, :]@N[f, :] 
-# B_sp = scipy.sparse.csr_matrix(B)
-
-# F = np.zeros((nfaces, nverts), dtype=np.bool)
-# for f, face in enumerate(F):
-#     F[f, face] = True
-# F_sp = scipy.sparse.csr_matrix(F)
-
-# A_vert = B_sp@F_sp.T
-# V_vert = np.array((A_vert@A_vert.T).todense())
-
-# PLOT V_vert
-# import matplotlib.pyplot as plt
-# plt.figure()
-# plt.imshow(np.array(V_vert.todense()))
-# plt.show()
-
-# TODO: make sparse matrix
-
 ################################################################################
 # HORIZON MAPS
 
 j = 830 # test a face
 v_j = np.mean(V[F[j]], 0) # get centroid
 BTN_j = get_frenet_frame(j)
-# I_vis = np.nonzero(A_zero[:, j])[0]
-I_vis = np.nonzero(A_R[:, j])[0]
+I_vis = np.nonzero(V_after[:, j])[0]
 F_vis = F[I_vis]
 nfaces_vis = len(I_vis)
 
@@ -144,17 +114,21 @@ plt.show()
 ################################################################################
 # PLOT VISIBILITY FOR ONE FACE
 
-j = 830
-# C = A_zero[:, j].astype(np.float)
-# C = V_zero[j, :].astype(np.float)
-C = V_R[j, :].astype(np.float)
+j = 100
+C = A_after[j, :].astype(np.float)
 C[j] = -1
+
+fig = mlab.gcf()
+mlab.clf()
+
 mesh = mlab.triangular_mesh(*V.T, F, representation='wireframe', opacity=0)
 mesh.mlab_source.dataset.cell_data.scalars = C
 mesh.mlab_source.dataset.cell_data.scalars.name = 'face_color'
 mesh.mlab_source.update()
 mesh2 = mlab.pipeline.set_active_attribute(mesh, cell_scalars='face_color')
 surf = mlab.pipeline.surface(mesh2)
+
+mlab.show()
 
 ################################################################################
 # PLOT THE VISIBILITY MATRIX
@@ -170,16 +144,48 @@ plt.show()
 
 import h5py
 
-path = '../cpp/build/Release/out.h5'
-
-with h5py.File(path, 'r') as f:
-    indices = f['rowind'][:].flatten()
-    indptr = f['colptr'][:].flatten()
-
-data = np.ones(indices.shape, dtype=np.bool)
-A = scipy.sparse.csc_matrix((data, indices, indptr), dtype=np.bool)
-
 fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1)
-ax.imshow(np.array(A.todense()))
+ax.imshow(V_arma)
+fig.show()
+
+with h5py.File('../cpp/build/Release/A.h5') as f:
+    A_arma = f['A'][:]
+
+with h5py.File('../cpp/build/Release/V.h5') as f:
+    V_arma = f['V'][:]
+
+fig = plt.figure()
+ax = fig.add_subplot(221)
+ax.imshow(A_R)
+ax = fig.add_subplot(222)
+ax.imshow(A_arma)
+ax = fig.add_subplot(223)
+ax.imshow(V_R)
+ax = fig.add_subplot(224)
+ax.imshow(V_arma)
+fig.show()
+
+
+
+A_before = dok_from_coo_file('../cpp/build/Release/A_before.coo', 5000, 5000, np.bool, ',')
+A_after = dok_from_coo_file('../cpp/build/Release/A_after.coo', 5000, 5000, np.bool, ',')
+
+A_before = np.array(A_before.todense())
+A_after = np.array(A_after.todense())
+
+V_before = A_before.T*A_before
+V_after = A_after.T*A_after
+
+fig = plt.figure()
+
+fig.add_subplot(321).imshow(A_R)
+fig.add_subplot(322).imshow(V_R)
+
+fig.add_subplot(323).imshow(A_before)
+fig.add_subplot(324).imshow(V_before)
+
+fig.add_subplot(325).imshow(A_after)
+fig.add_subplot(326).imshow(V_after)
+
 fig.show()
