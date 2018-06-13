@@ -1,12 +1,29 @@
-* Todo
+* General
 
-  - [ ] Make visibility matrix
-  - [ ] Create elevation maps for entire model
-  - [-] Plot number of visible neighbors on model
-	- [X] Make plot in Python
-	- [ ] Get it working
-  - [ ] SPICE sun position/size/projection
-  - [ ] Make sure to build fastbvh using SSE
-  - [ ] Make fastbvh also use double precision
-	- [ ] make fastbvh templates
-	- [ ] add tests
+** TODO Replace fastbvh with CGAL
+
+* Visibility
+
+** TODO Prune visibility matrix by shooting rays
+
+** TODO Export pruned vis. matrix to HDF5 and load in Python
+
+** TODO Plot vis. matrix on 3D mesh
+
+** TODO Plot pruned visible triangles in spherical coordinates
+
+** TODO Triangle picking to make it easier to debug visibility
+
+* Horizons
+
+** TODO Create horizons using raytracing and std::lower_bound
+   :LOGBOOK:
+   CLOCK: [2018-06-13 Wed 11:50]--[2018-06-13 Wed 11:55] =>  0:05
+   CLOCK: [2018-06-13 Wed 11:28]--[2018-06-13 Wed 11:44] =>  0:16
+   CLOCK: [2018-06-13 Wed 10:58]--[2018-06-13 Wed 11:23] =>  0:25
+   CLOCK: [2018-06-13 Wed 10:20]--[2018-06-13 Wed 10:49] =>  0:29
+   :END:
+
+** TODO Write horizons out and plot in Python
+
+** TODO Create horizons using triangles in spherical coordinates
