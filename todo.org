@@ -1,6 +1,11 @@
 * General
 
-** TODO Replace fastbvh with CGAL
+** DONE Fix fastbvh
+   :LOGBOOK:
+   CLOCK: [2018-06-13 Wed 12:25]--[2018-06-13 Wed 12:35] =>  0:10
+   CLOCK: [2018-06-13 Wed 11:59]--[2018-06-13 Wed 12:02] =>  0:03
+   :END:
+
 
 * Visibility
 
@@ -16,14 +21,13 @@
 
 * Horizons
 
-** TODO Create horizons using raytracing and std::lower_bound
+** DONE Create horizons using raytracing and std::lower_bound
    :LOGBOOK:
+   CLOCK: [2018-06-13 Wed 12:49]--[2018-06-13 Wed 13:09] =>  0:20
    CLOCK: [2018-06-13 Wed 11:50]--[2018-06-13 Wed 11:55] =>  0:05
    CLOCK: [2018-06-13 Wed 11:28]--[2018-06-13 Wed 11:44] =>  0:16
    CLOCK: [2018-06-13 Wed 10:58]--[2018-06-13 Wed 11:23] =>  0:25
    CLOCK: [2018-06-13 Wed 10:20]--[2018-06-13 Wed 10:49] =>  0:29
    :END:
 
-** TODO Write horizons out and plot in Python
-
-** TODO Create horizons using triangles in spherical coordinates
+** DONE Write horizons out and plot in Python
