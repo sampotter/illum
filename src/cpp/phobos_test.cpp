@@ -235,27 +235,16 @@ get_frenet_frame(Tri const * tri) {
  * returns: vector of horizon angles (thetas) for each abscissa phi
  */
 arma::vec
-trace_horizon(arma::uword ind,
-              std::vector<Object *> const & objects,
+trace_horizon(Tri const * tri,
               BVH const & bvh,
               arma::vec const & phis,
-              arma::vec const & thetas)
+              double const theta_eps = 1e-3)
 {
   IntersectionInfo info;
-
-  auto * tri = static_cast<Tri const *>(objects[ind]);
 
   auto p = tri->getCentroid();
   auto n = tri->getNormal(info);
   p = p + 1e-5*n;
-
-  {
-    bvh.getIntersection(Ray(p, n), &info, false);
-    assert(info.object != objects[ind]);
-    
-    bvh.getIntersection(Ray(p, -n), &info, false);
-    assert(info.object == objects[ind]);
-  }
 
   auto F = get_frenet_frame(tri);
 
@@ -268,27 +257,28 @@ trace_horizon(arma::uword ind,
     return Vector3(v(0), v(1), v(2));
   };
 
-  {
-    auto d = get_ray_d(0, 0);
-    // assert(!bvh.getIntersection(Ray(p, d), &info, true));
-    // assert(!bvh.getIntersection(Ray(p, d), &info, false));
+  auto const shoot_ray = [&] (double ph, double th) {
+    Ray ray(p, get_ray_d(ph, th));
+    return bvh.getIntersection(ray, &info, false);
+  };
 
-    IntersectionInfo info;
-    bvh.getIntersection(Ray(p, d), &info, false);
-  }
+  auto const ray_search = [&] (double ph) {
+    double lo = 0, hi = arma::datum::pi, mid = hi/2, prev;
+    do {
+      prev = mid;
+      if (shoot_ray(ph, mid)) {
+        hi = mid;
+      } else {
+        lo = mid;
+      }
+      mid = (lo + hi)/2;
+    } while (std::fabs(mid - prev) > theta_eps);    
+    return mid;
+  };
 
   arma::vec horizon(arma::size(phis));
   for (int i = 0; i < phis.n_elem; ++i) {
-    auto ph = phis(i);
-    double h = arma::datum::pi; // initially pointing down
-    for (int j = 0; j < thetas.n_elem; ++j) {
-      auto th = thetas(j);
-      Ray ray(p, get_ray_d(ph, th));
-      if (bvh.getIntersection(ray, &info, true)) {
-        h = std::min(h, th);
-      }
-    }
-    horizon(i) = h;
+    horizon(i) = ray_search(phis(i));
   }
 
   return horizon;
@@ -309,8 +299,8 @@ write_csc_inds(arma::SpMat<T> const & S, const char * path) {
 
 int main(int argc, char * argv[])
 {
-  // std::string filename = "../../../../data/SHAPE0.OBJ";
-  std::string filename = "../../../../data/SHAPE0_dec5000.obj";
+  std::string filename = "../../../../data/SHAPE0.OBJ";
+  // std::string filename = "../../../../data/SHAPE0_dec5000.obj";
   if (argc >= 2) filename = argv[1];
 
   int shape_index = 0;
@@ -364,22 +354,18 @@ int main(int argc, char * argv[])
   //////////////////////////////////////////////////////////////////////////////
   // horizon sandbox
 
-  int nphi = 21;
+  int nphi = 41;
   auto phis = arma::linspace(0, 2*arma::datum::pi, nphi);
-
-  int ntheta = 11;
-  auto thetas = arma::linspace(arma::datum::pi, 0, ntheta);
 
   arma::mat horizons(nphi, nfaces);
 
   // TODO: maybe can replace this w/ foreach
   // TODO: openmp
-  // for (int ind = 0; ind < nfaces; ++ind) {
-  //   std::cout << ind << std::endl;
-  //   horizons.col(ind) = trace_horizon(ind, objects, bvh, phis, thetas);
-  // }
-
-  horizons.col(0) = trace_horizon(0, objects, bvh, phis, thetas);
+  for (int ind = 0; ind < nfaces; ++ind) {
+    std::cout << ind << std::endl;
+    Tri const * tri = static_cast<Tri const *>(objects[ind]);
+    horizons.col(ind) = trace_horizon(tri, bvh, phis);
+  }
 
   horizons.save(arma::hdf5_name("horizons.h5", "horizons"));
 }
