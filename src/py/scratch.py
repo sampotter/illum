@@ -94,21 +94,29 @@ for i, face in enumerate(F_vis):
     Phi[i] = np.unwrap(np.arctan2(D_i[1, :], D_i[0, :]))
     Theta[i] = np.arccos(D_i[2, :])
 
+from matplotlib.patches import Polygon
+from matplotlib.collections import PatchCollection
+
 fig = plt.figure()
-
 ax = fig.add_subplot(1, 1, 1)
-
 ax.plot([-np.pi, np.pi], [np.pi/2, np.pi/2], 'k--', linewidth=1)
 
+facecolors = []
+edgecolors = []
+patches = []
 for i in range(nfaces_vis):
-    ax.plot(Phi[i, [0, 1]], Theta[i, [0, 1]], 'k', linewidth=1)
-    ax.plot(Phi[i, [1, 2]], Theta[i, [1, 2]], 'k', linewidth=1)
-    ax.plot(Phi[i, [2, 0]], Theta[i, [2, 0]], 'k', linewidth=1)
-
+    xy = np.array([
+        [Phi[i, 0], Theta[i, 0]],
+        [Phi[i, 1], Theta[i, 1]],
+        [Phi[i, 2], Theta[i, 2]]])
+    facecolors.append((1.0, 0.5, 0.5, 0.5))
+    edgecolors.append('k')
+    patches.append(Polygon(xy, True))
+coll = PatchCollection(patches, facecolors=facecolors, edgecolors=edgecolors)
+ax.add_collection(coll)
 ax.set_xlim([-np.pi, np.pi])
 ax.set_ylim([0, np.pi])
 ax.invert_yaxis()
-
 plt.show()
 
 ################################################################################
