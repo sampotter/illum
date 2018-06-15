@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 plt.ion()
 
+import h5py
 import numpy as np
 import scipy.sparse
 import trimesh
@@ -12,6 +13,9 @@ from itertools import product
 from mayavi import mlab
 
 from sparse import *
+
+################################################################################
+# IMPORT GEOMETRY
 
 tri = trimesh.load('../../data/SHAPE0_dec5000.obj')
 
@@ -73,6 +77,25 @@ for j in range(nfaces):
 V_R = np.multiply(A_R.T, A_R)
 
 ################################################################################
+# GETTING DATA FROM ARMADILLO
+
+A_before = csc_from_h5_file('../cpp/build/Release/A_before.h5', nfaces, nfaces, np.bool)
+A_after = csc_from_h5_file('../cpp/build/Release/A_after.h5', nfaces, nfaces, np.bool)
+V_arma = csc_from_h5_file('../cpp/build/Release/V.h5', nfaces, nfaces, np.bool)
+
+fig = plt.figure()
+
+fig.add_subplot(321).imshow(A_R)
+fig.add_subplot(322).imshow(V_R)
+
+fig.add_subplot(323).imshow(np.array(A_before.todense()))
+fig.add_subplot(324).imshow(np.array(V_arma.todense()))
+
+fig.add_subplot(325).imshow(np.array(A_after.todense()))
+
+fig.show()
+
+################################################################################
 # HORIZON MAPS
 
 j = 1200 # test a face
@@ -123,7 +146,7 @@ plt.show()
 # PLOT VISIBILITY FOR ONE FACE
 
 j = 100
-C = A_after[j, :].astype(np.float)
+C = np.array(A_after.getrow(j).todense(), dtype=np.float).flatten()
 C[j] = -1
 
 fig = mlab.gcf()
@@ -146,24 +169,3 @@ fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1)
 ax.imshow(V_R)
 plt.show()
-
-################################################################################
-# Getting data from Armadillo
-
-import h5py
-
-A_before = csc_from_h5_file('../cpp/build/Release/A_before.h5', nfaces, nfaces, np.bool)
-A_after = csc_from_h5_file('../cpp/build/Release/A_after.h5', nfaces, nfaces, np.bool)
-V_arma = csc_from_h5_file('../cpp/build/Release/V.h5', nfaces, nfaces, np.bool)
-
-fig = plt.figure()
-
-fig.add_subplot(321).imshow(A_R)
-fig.add_subplot(322).imshow(V_R)
-
-fig.add_subplot(323).imshow(np.array(A_before.todense()))
-fig.add_subplot(324).imshow(np.array(V_arma.todense()))
-
-fig.add_subplot(325).imshow(np.array(A_after.todense()))
-
-fig.show()
