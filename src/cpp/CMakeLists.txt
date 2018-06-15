@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.11)
+cmake_minimum_required (VERSION 3.10)
 
 project (illum)
 
@@ -14,9 +14,6 @@ endif ()
 find_package (Armadillo REQUIRED)
 include_directories (${ARMADILLO_INCLUDE_DIRS})
 
-find_package (CGAL REQUIRED)
-include_directories (${CGAL_INCLUDE_DIRS})
-
 find_package (HDF5 REQUIRED)
 include_directories (${HDF5_INCLUDE_DIRS})
 
@@ -30,7 +27,6 @@ add_subdirectory (tinyobjloader)
 add_executable (phobos_test)
 target_sources (phobos_test PUBLIC phobos_test.cpp)
 target_link_libraries (phobos_test PRIVATE ${ARMADILLO_LIBRARIES})
-target_link_libraries (phobos_test PRIVATE ${CGAL_LIBRARIES})
 target_link_libraries (phobos_test PRIVATE ${HDF5_LIBRARIES})
 target_link_libraries (phobos_test PRIVATE cxxopts)
 target_link_libraries (phobos_test PRIVATE fastbvh)
