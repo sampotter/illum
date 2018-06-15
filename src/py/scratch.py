@@ -152,29 +152,18 @@ plt.show()
 
 import h5py
 
-# A_before = dok_from_coo_file('../cpp/build/Release/A_before.coo', 5000, 5000, np.bool, ',')
-# A_after = dok_from_coo_file('../cpp/build/Release/A_after.coo', 5000, 5000, np.bool, ',')
-
 A_before = csc_from_h5_file('../cpp/build/Release/A_before.h5', nfaces, nfaces, np.bool)
 A_after = csc_from_h5_file('../cpp/build/Release/A_after.h5', nfaces, nfaces, np.bool)
-
-A_before = np.array(A_before.todense())
-A_after = np.array(A_after.todense())
-
-V_before = A_before.T*A_before
-V_after = A_after.T*A_after
+V_arma = csc_from_h5_file('../cpp/build/Release/V.h5', nfaces, nfaces, np.bool)
 
 fig = plt.figure()
 
 fig.add_subplot(321).imshow(A_R)
 fig.add_subplot(322).imshow(V_R)
 
-fig.add_subplot(323).imshow(A_before)
-fig.add_subplot(324).imshow(V_before)
+fig.add_subplot(323).imshow(np.array(A_before.todense()))
+fig.add_subplot(324).imshow(np.array(V_arma.todense()))
 
-fig.add_subplot(325).imshow(A_after)
-fig.add_subplot(326).imshow(V_after)
+fig.add_subplot(325).imshow(np.array(A_after.todense()))
 
 fig.show()
-
-
