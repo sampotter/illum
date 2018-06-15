@@ -23,6 +23,7 @@ include_directories (${HDF5_INCLUDE_DIRS})
 # find_package (OpenMP REQUIRED)
 # set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 
+add_subdirectory (cxxopts)
 add_subdirectory (fastbvh)
 add_subdirectory (tinyobjloader)
 
@@ -31,6 +32,7 @@ target_sources (phobos_test PUBLIC phobos_test.cpp)
 target_link_libraries (phobos_test PRIVATE ${ARMADILLO_LIBRARIES})
 target_link_libraries (phobos_test PRIVATE ${CGAL_LIBRARIES})
 target_link_libraries (phobos_test PRIVATE ${HDF5_LIBRARIES})
+target_link_libraries (phobos_test PRIVATE cxxopts)
 target_link_libraries (phobos_test PRIVATE fastbvh)
 target_link_libraries (phobos_test PRIVATE tinyobjloader)
 target_compile_features (phobos_test

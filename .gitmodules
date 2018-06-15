@@ -4,3 +4,6 @@
 [submodule "src/cpp/tinyobjloader"]
 	path = src/cpp/tinyobjloader
 	url = https://github.com/sampotter/tinyobjloader.git
+[submodule "src/cpp/cxxopts"]
+	path = src/cpp/cxxopts
+	url = https://github.com/sampotter/cxxopts.git
