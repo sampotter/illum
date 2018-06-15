@@ -148,33 +148,34 @@ fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
     auto * obj_i = objects[i];
     auto n_i = obj_i->getNormal(info);
     auto p_i = obj_i->getCentroid();
-    p_i = p_i + 1e-7*n_i; // perturb to avoid self-intersection
+    p_i = p_i + 1e-5*n_i; // perturb to avoid self-intersection
 
     std::vector<arma::uword> hits;
 
-    for (int j = 0; j < objects.size(); ++j) {
-      if (!V(i, j)) {
-        continue;
-      }
-      
-      auto * obj_j = objects[j];
-      auto p_j = obj_j->getCentroid();
-      auto n_ij = normalize(p_j - p_i);
-
-      /**
-       * Cast a ray to each "facing" face and store the index of the
-       * face that was actually hit in `hits'.
-       */
-      if (bvh.getIntersection(Ray(p_i, n_ij), &info, false)) {
+    auto cast_ray_and_insert_hit = [&] (Vector3 const & normal) {
+      if (bvh.getIntersection(Ray(p_i, normal), &info, false)) {
         auto index = static_cast<Tri const *>(info.object)->index;
         auto lb = std::lower_bound(hits.begin(), hits.end(), index);
         if (lb == hits.end() || *lb != index) {
           hits.insert(lb, index);
         }
       }
+    };
+
+    for (int j = 0; j < objects.size(); ++j) {
+      // TODO: not accessing this in the most cache efficient way
+      if (!V(i, j)) {
+        continue;
+      }
+
+      auto * tri_j = static_cast<Tri const *>(objects[j]);
+      auto p_j = tri_j->getCentroid();
+
+      // Shoot one ray from centroid to centroid:
+      cast_ray_and_insert_hit(normalize(p_j - p_i));
     }
 
-    std::cout << hits.size() << "/" << V.col(i).n_nonzero << std::endl;
+    // std::cout << hits.size() << "/" << V.col(i).n_nonzero << std::endl;
 
     col += hits.size();
     colptr_vec.push_back(col);
@@ -290,16 +291,31 @@ build_horizon_map(std::vector<Object *> const & objects,
 }
 
 template <typename T>
+std::pair<arma::uvec, arma::uvec> get_rowinds_and_colptrs(arma::SpMat<T> const & S) {
+  arma::uvec rowinds(S.n_nonzero), colptrs(S.n_cols + 1);
+  int i = 0, j = 0;
+  colptrs(0) = 0;
+  for (auto it = S.begin(); it != S.end(); ++it) {
+    rowinds(i++) = it.row();
+    if (j != it.col()) {
+      colptrs(j = it.col()) = i;
+    }
+  }
+  colptrs(++j) = S.n_nonzero;
+  return {rowinds, colptrs};
+}
+
+template <typename T>
 void
 write_csc_inds(arma::SpMat<T> const & S, const char * path) {
-  arma::Col<T> values((T *) S.values, S.n_nonzero);
+  auto values = arma::nonzeros(S);
   values.save(arma::hdf5_name(path, "values", arma::hdf5_opts::append));
 
-  arma::uvec rowind(S.row_indices, S.n_nonzero);
-  rowind.save(arma::hdf5_name(path, "rowind", arma::hdf5_opts::append));
+  arma::uvec rowinds, colptrs;
+  std::tie(rowinds, colptrs) = get_rowinds_and_colptrs(S);
 
-  arma::uvec indptr(S.col_ptrs, S.n_cols + 1);
-  indptr.save(arma::hdf5_name(path, "indptr", arma::hdf5_opts::append));
+  rowinds.save(arma::hdf5_name(path, "rowinds", arma::hdf5_opts::append));
+  colptrs.save(arma::hdf5_name(path, "colptrs", arma::hdf5_opts::append));
 }
 
 void write_coo(arma::sp_umat const & S, const char * path) {
@@ -353,18 +369,20 @@ int main(int argc, char * argv[])
   // visibility sandbox
   //
 
+  std::cout << "computing A" << std::endl;
   auto A_before = compute_A(objects);
-  // write_csc_inds(A_before, "A_before.h5");
-  write_coo(A_before, "A_before.coo");
+  write_csc_inds(A_before, "A_before.h5");
+  // write_coo(A_before, "A_before.coo");
 
+  std::cout << "fixing A" << std::endl;
   auto A_after = fix_visibility(bvh, objects, compute_V(A_before));
-  // write_csc_inds(A_after, "A_after.h5");
-  write_coo(A_after, "A_after.coo");
+  write_csc_inds(A_after, "A_after.h5");
+  // write_coo(A_after, "A_after.coo");
 
   //////////////////////////////////////////////////////////////////////////////
   // horizon sandbox
 
-  // int nphi = 41;
+  // int nphi = 361;
   // auto H = build_horizon_map(objects, bvh, nphi);
   // H.save(arma::hdf5_name("horizons.h5", "horizons"));
 }
