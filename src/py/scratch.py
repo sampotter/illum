@@ -144,32 +144,11 @@ plt.show()
 
 import h5py
 
-fig = plt.figure()
-ax = fig.add_subplot(1, 1, 1)
-ax.imshow(V_arma)
-fig.show()
+# A_before = dok_from_coo_file('../cpp/build/Release/A_before.coo', 5000, 5000, np.bool, ',')
+# A_after = dok_from_coo_file('../cpp/build/Release/A_after.coo', 5000, 5000, np.bool, ',')
 
-with h5py.File('../cpp/build/Release/A.h5') as f:
-    A_arma = f['A'][:]
-
-with h5py.File('../cpp/build/Release/V.h5') as f:
-    V_arma = f['V'][:]
-
-fig = plt.figure()
-ax = fig.add_subplot(221)
-ax.imshow(A_R)
-ax = fig.add_subplot(222)
-ax.imshow(A_arma)
-ax = fig.add_subplot(223)
-ax.imshow(V_R)
-ax = fig.add_subplot(224)
-ax.imshow(V_arma)
-fig.show()
-
-
-
-A_before = dok_from_coo_file('../cpp/build/Release/A_before.coo', 5000, 5000, np.bool, ',')
-A_after = dok_from_coo_file('../cpp/build/Release/A_after.coo', 5000, 5000, np.bool, ',')
+A_before = csc_from_h5_file('../cpp/build/Release/A_before.h5', nfaces, nfaces, np.bool)
+A_after = csc_from_h5_file('../cpp/build/Release/A_after.h5', nfaces, nfaces, np.bool)
 
 A_before = np.array(A_before.todense())
 A_after = np.array(A_after.todense())
@@ -189,3 +168,5 @@ fig.add_subplot(325).imshow(A_after)
 fig.add_subplot(326).imshow(V_after)
 
 fig.show()
+
+
