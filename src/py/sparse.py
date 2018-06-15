@@ -14,7 +14,7 @@ def dok_from_coo_file(path, M, N, dtype, sep=None):
 def csc_from_h5_file(path, M, N, dtype):
     with h5py.File(path, 'r') as f:
         data = np.array(f['values'][:]).flatten()
-        indices = np.array(f['rowind'][:]).flatten()
-        indptr = np.array(f['indptr'][:]).flatten()
+        indices = np.array(f['rowinds'][:]).flatten()
+        indptr = np.array(f['colptrs'][:]).flatten()
     return scipy.sparse.csc_matrix(
         (data, indices, indptr), shape=(M, N), dtype=dtype)
