@@ -1,35 +1,33 @@
 * General
-
 ** DONE Fix fastbvh
    :LOGBOOK:
    CLOCK: [2018-06-13 Wed 12:25]--[2018-06-13 Wed 12:35] =>  0:10
    CLOCK: [2018-06-13 Wed 11:59]--[2018-06-13 Wed 12:02] =>  0:03
    :END:
-
-
+** TODO Extending phobos_test
+   :LOGBOOK:
+   CLOCK: [2018-06-15 Fri 14:17]
+   :END:
+   - [ ] add CLI
+	 - [ ] position for horizon/visibility
+	 - [ ] parameter for offset
 * Visibility
-
-** TODO Prune visibility matrix by shooting rays
-
-** TODO Fix C++ visibility matrix
+** TODO Add height offset to visibility and horizion matrix creation
+** DONE Prune visibility matrix by shooting rays
+** DONE Fix C++ visibility matrix
 
    - [X] fix BVH permutation
    - [X] get back to only dealing w/ sparse matrices
-   - [ ] write A's in COO format in ASCII file...
-   - [ ] write pre-A and corrected A to disk in CSC format (in HDF5 files)
+   - [X] write A's in COO format in ASCII file...
+   - [X] write pre-A and corrected A to disk in CSC format (in HDF5 files)
    - [X] load into Python using sparse.py and plot (6 plots total)
-   - [ ] fix visibility to shoot rays to each triangle corner
+   - [X] fix visibility to shoot rays to each triangle corner
 
-** TODO Export pruned vis. matrix to HDF5 and load in Python
-
-** TODO Plot vis. matrix on 3D mesh
-
-** TODO Plot pruned visible triangles in spherical coordinates
-
+** DONE Export pruned vis. matrix to HDF5 and load in Python
+** DONE Plot vis. matrix on 3D mesh
+** DONE Plot pruned visible triangles in spherical coordinates
 ** TODO Triangle picking to make it easier to debug visibility
-
 * Horizons
-
 ** DONE Create horizons using raytracing and std::lower_bound
    :LOGBOOK:
    CLOCK: [2018-06-13 Wed 12:49]--[2018-06-13 Wed 13:09] =>  0:20
@@ -38,7 +36,9 @@
    CLOCK: [2018-06-13 Wed 10:58]--[2018-06-13 Wed 11:23] =>  0:25
    CLOCK: [2018-06-13 Wed 10:20]--[2018-06-13 Wed 10:49] =>  0:29
    :END:
-
 ** DONE Write horizons out and plot in Python
-
 ** TODO Compressing the horizon map
+* Illumination Modeling
+** TODO Read Ingersoll paper
+** TODO Recreate Ingersoll results
+** TODO Derive recurrence for illumination

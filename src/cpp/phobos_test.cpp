@@ -10,9 +10,12 @@
 // #include <omp.h>
 
 #include <armadillo>
+#include <cxxopts.hpp>
 #include <fastbvh>
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
+
+#include "timer.hpp"
 
 float eps = 0;
 
@@ -134,26 +137,30 @@ arma::sp_umat compute_V(arma::sp_umat const & A) {
 }
 
 arma::sp_umat
-fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
-               arma::sp_umat const & V) {
+prune_A(BVH const & bvh, std::vector<Object *> const & objects,
+        arma::sp_umat const & A, double offset=1e-5)
+{
+  int nfaces = objects.size();
+  assert(nfaces == A.n_rows && nfaces == A.n_cols);
+
   IntersectionInfo info;
 
   std::vector<arma::uword> rowind_vec, colptr_vec;
-  colptr_vec.reserve(V.n_cols);
+  colptr_vec.reserve(nfaces + 1);
 
   int col = 0;
   colptr_vec.push_back(col);
 
-  for (int i = 0; i < objects.size(); ++i) {
-    auto * obj_i = objects[i];
-    auto n_i = obj_i->getNormal(info);
-    auto p_i = obj_i->getCentroid();
-    p_i = p_i + 1e-5*n_i; // perturb to avoid self-intersection
+  for (int j = 0; j < nfaces; ++j) {
+    auto * obj_j = objects[j];
+    auto n_j = obj_j->getNormal(info);
+    auto p_j = obj_j->getCentroid();
+    p_j = p_j + offset*n_j; // perturb to avoid self-intersection
 
     std::vector<arma::uword> hits;
 
     auto cast_ray_and_insert_hit = [&] (Vector3 const & normal) {
-      if (bvh.getIntersection(Ray(p_i, normal), &info, false)) {
+      if (bvh.getIntersection(Ray(p_j, normal), &info, false)) {
         auto index = static_cast<Tri const *>(info.object)->index;
         auto lb = std::lower_bound(hits.begin(), hits.end(), index);
         if (lb == hits.end() || *lb != index) {
@@ -162,21 +169,15 @@ fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
       }
     };
 
-    for (int j = 0; j < objects.size(); ++j) {
-      // TODO: not accessing this in the most cache efficient way
-      if (!V(i, j)) {
-        continue;
-      }
-
-      auto * tri_j = static_cast<Tri const *>(objects[j]);
-      auto p_j = tri_j->getCentroid();
+    for (int i = 0; i < nfaces; ++i) {
+      if (!A(i, j)) continue;
 
       // Shoot one ray from centroid to centroid:
-      cast_ray_and_insert_hit(normalize(p_j - p_i));
+      auto p_i = objects[i]->getCentroid();
+      cast_ray_and_insert_hit(normalize(p_i - p_j));
     }
 
-    // std::cout << hits.size() << "/" << V.col(i).n_nonzero << std::endl;
-
+    // std::cout << hits.size() << "/" << A.col(i).n_nonzero << std::endl;
     col += hits.size();
     colptr_vec.push_back(col);
 
@@ -185,7 +186,7 @@ fix_visibility(BVH const & bvh, std::vector<Object *> const & objects,
 
   arma::uvec rowind(rowind_vec), colptr(colptr_vec);
   arma::uvec values(rowind.n_elem, arma::fill::ones);
-  return arma::sp_umat(rowind, colptr, values, V.n_rows, V.n_cols);
+  return arma::sp_umat(rowind, colptr, values, nfaces, nfaces);
 }
 
 /**
@@ -228,13 +229,14 @@ arma::vec
 trace_horizon(Tri const * tri,
               BVH const & bvh,
               arma::vec const & phis,
-              double const theta_eps = 1e-3)
+              double theta_eps = 1e-3,
+              double offset = 1e-5)
 {
   IntersectionInfo info;
 
   auto p = tri->getCentroid();
   auto n = tri->getNormal(info);
-  p = p + 1e-5*n;
+  p = p + offset*n;
 
   auto F = get_frenet_frame(tri);
 
@@ -306,8 +308,7 @@ std::pair<arma::uvec, arma::uvec> get_rowinds_and_colptrs(arma::SpMat<T> const &
 }
 
 template <typename T>
-void
-write_csc_inds(arma::SpMat<T> const & S, const char * path) {
+void write_csc_inds(arma::SpMat<T> const & S, const char * path) {
   auto values = arma::nonzeros(S);
   values.save(arma::hdf5_name(path, "values", arma::hdf5_opts::append));
 
@@ -331,14 +332,38 @@ void write_coo(arma::sp_umat const & S, const char * path) {
   f.close();
 }
 
+void usage(std::string const & argv0) {
+  std::cout << "usage: " << argv0 << std::endl;
+}
+
 int main(int argc, char * argv[])
 {
-  // std::string filename = "../../../../data/SHAPE0.OBJ";
-  std::string filename = "../../../../data/SHAPE0_dec5000.obj";
-  if (argc >= 2) filename = argv[1];
 
-  int shape_index = 0;
-  if (argc >= 3) shape_index = std::atoi(argv[2]);
+  cxxopts::Options options("phobos_test", "Work in progress...");
+
+  options.add_options()
+    ("h,help", "Display usage")
+    ("t,task", "Task to do", cxxopts::value<std::string>())
+    ("p,path", "Path to input OBJ file", cxxopts::value<std::string>())
+    ("s,shape", "Shape index in OBJ file",
+     cxxopts::value<int>()->default_value("0"))
+    ("o,offset",
+     "Offset when calculating visibility from a triangle",
+     cxxopts::value<double>()->default_value("1e-5"));
+
+  options.parse_positional({"task"});
+
+  auto args = options.parse(argc, argv);
+
+  if (args["help"].as<bool>() || args["task"].count() == 0) {
+    std::cout << options.help() << std::endl;
+    std::exit(EXIT_SUCCESS);
+  }
+
+  auto task = args["task"].as<std::string>();
+  auto path = args["path"].as<std::string>();
+  auto shape_index = args["shape"].as<int>();
+  auto offset = args["offset"].as<double>();
 
   /**
    * Use tinyobjloader to load selected obj file.
@@ -348,7 +373,7 @@ int main(int argc, char * argv[])
   std::vector<tinyobj::material_t> materials;
   std::string err;
   bool ret = tinyobj::LoadObj(
-    &attrib, &shapes, &materials, &err, filename.c_str());
+    &attrib, &shapes, &materials, &err, path.c_str());
 
   /**
    * Build a vector of objects for use with our bounding volume
@@ -365,24 +390,35 @@ int main(int argc, char * argv[])
    */
   BVH bvh(&bvh_objects);
 
-  //////////////////////////////////////////////////////////////////////////////
-  // visibility sandbox
-  //
+  if (task == "visibility") {
 
-  std::cout << "computing A" << std::endl;
-  auto A_before = compute_A(objects);
-  write_csc_inds(A_before, "A_before.h5");
-  // write_coo(A_before, "A_before.coo");
+    std::cout << "- assembling A";
+    tic();
+    auto A_before = compute_A(objects);
+    std::cout << " [" << toc() << "s]" << std::endl;
 
-  std::cout << "fixing A" << std::endl;
-  auto A_after = fix_visibility(bvh, objects, compute_V(A_before));
-  write_csc_inds(A_after, "A_after.h5");
-  // write_coo(A_after, "A_after.coo");
+    std::cout << "- pruning A";
+    tic();
+    auto A_after = prune_A(bvh, objects, A_before);
+    std::cout << " [" << toc() << "s]" << std::endl;
 
-  //////////////////////////////////////////////////////////////////////////////
-  // horizon sandbox
+    std::cout << "- computing V";
+    auto V = compute_V(A_after);
+    std::cout << " [" << toc() << "s]" << std::endl;
 
-  // int nphi = 361;
-  // auto H = build_horizon_map(objects, bvh, nphi);
-  // H.save(arma::hdf5_name("horizons.h5", "horizons"));
+    write_csc_inds(A_before, "A_before.h5");
+    write_csc_inds(A_after, "A_after.h5");
+    write_csc_inds(V, "V.h5");
+
+  } else if (task == "horizon") {
+
+    int nphi = 361;
+
+    std::cout << "- building horizon map";
+    auto H = build_horizon_map(objects, bvh, nphi);
+    std::cout << " [" << toc() << "s]" << std::endl;
+
+    H.save(arma::hdf5_name("horizons.h5", "horizons"));
+
+  }
 }

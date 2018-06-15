@@ -75,10 +75,10 @@ V_R = np.multiply(A_R.T, A_R)
 ################################################################################
 # HORIZON MAPS
 
-j = 830 # test a face
+j = 1200 # test a face
 v_j = np.mean(V[F[j]], 0) # get centroid
 BTN_j = get_frenet_frame(j)
-I_vis = np.nonzero(V_after[:, j])[0]
+I_vis = np.nonzero(V_arma[:, j])[0]
 F_vis = F[I_vis]
 nfaces_vis = len(I_vis)
 

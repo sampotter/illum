@@ -1,4 +1,5 @@
 import h5py
+import numpy as np
 import scipy.sparse
 
 def dok_from_coo_file(path, M, N, dtype, sep=None):
