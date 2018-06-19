@@ -1,6 +1,8 @@
 #ifndef __ILLUM_HPP__
 #define __ILLUM_HPP__
 
+#include <unordered_map>
+
 void
 build_A_zero(std::vector<Object *> const & objects, arma::sp_umat & A) {
   assert(A.is_empty());
