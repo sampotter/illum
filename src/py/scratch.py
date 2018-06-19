@@ -9,8 +9,10 @@ import numpy as np
 import scipy.sparse
 import trimesh
 
-from itertools import product
+from itertools import combinations, product
 from mayavi import mlab
+
+import points
 
 from sparse import *
 
@@ -48,8 +50,11 @@ for i, face in enumerate(F):
     T[i, :] /= np.linalg.norm(T[i, :])
     B[i, :] = np.cross(T[i, :], N[i, :])
 
-def get_frenet_frame(i):
-    return np.column_stack([B[i], T[i], N[i]])
+def get_frenet_frame(i, order='btn'):
+    assert(len(order) == 3)
+    assert(set(order) == {'t', 'n', 'b'})
+    cols = {'t': T[i], 'n': N[i], 'b': B[i]}
+    return np.column_stack([cols[order[0]], cols[order[1]], cols[order[2]]])
 
 ##############################
 # Face visibility using radii
@@ -145,7 +150,7 @@ plt.show()
 ################################################################################
 # PLOT VISIBILITY FOR ONE FACE
 
-j = 100
+j = 340
 C = np.array(A_after.getrow(j).todense(), dtype=np.float).flatten()
 C[j] = -1
 
@@ -169,3 +174,179 @@ fig = plt.figure()
 ax = fig.add_subplot(1, 1, 1)
 ax.imshow(V_R)
 plt.show()
+
+################################################################################
+# BUILD LINK MATRIX
+
+def nchoose2(n): return int(n*(n - 1)/2)
+
+adj_list = [np.nonzero(V_arma[:, j])[0] for j in range(nfaces)]
+
+nlinks = sum(nchoose2(len(lst)) for lst in adj_list)
+
+edge_inds = dict()
+link_inds = dict()
+
+edge_ind = 0
+link_ind = 0
+for j, lst in enumerate(adj_list):
+    print(j)
+    for i, k in combinations(lst, 2):
+        # Add link
+        i, k = sorted((i, k))
+        key = (i, j, k)
+        if key not in link_inds:
+            link_inds[key] = link_ind
+            link_ind += 1
+        # Add edges
+        key = tuple(sorted((i, j)))
+        if key not in edge_inds:
+            edge_inds[key] = edge_ind
+            edge_ind += 1
+        key = tuple(sorted((j, k)))
+        if key not in edge_inds:
+            edge_inds[key] = edge_ind
+            edge_ind += 1
+
+nedges = len(edge_inds)
+
+sparsity = nlinks/(nedges**2)
+print('sparsity = %g' % sparsity)
+
+Links = np.zeros((nedges, nedges), dtype=np.bool)
+for i, j, k in link_inds.keys():
+    key1 = tuple(sorted((i, j)))
+    key2 = tuple(sorted((j, k)))
+    Links[edge_inds[key1], edge_inds[key2]] = True
+    Links[edge_inds[key2], edge_inds[key1]] = True
+
+################################################################################
+# PLOT HORIZONS
+
+f = h5py.File('../cpp/build/Release/horizons.h5')
+H = f['horizons'][:]
+f.close()
+
+Phi = np.linspace(0, 2*np.pi, H.shape[1])
+
+fig = plt.figure()
+
+def plot_horizon(subplot, index):
+    ax = fig.add_subplot(subplot)
+    ax.plot([0, 2*np.pi], [np.pi/2, np.pi/2], 'k-.')
+    ax.plot(Phi, H[index, :])
+    ax.set_xlim(0, 2*np.pi)
+    ax.set_ylim(0, np.pi)
+    ax.invert_yaxis()
+    return ax
+
+plot_horizon(221, np.random.randint(nfaces))
+plot_horizon(222, np.random.randint(nfaces))
+plot_horizon(223, np.random.randint(nfaces))
+plot_horizon(224, np.random.randint(nfaces))
+
+fig.show()
+
+################################################################################
+# COMPUTE COSINES ON PHOBOS
+
+# create a random but plausible location for the sun
+
+def check_visibility(i, p_sun, r_sun):
+
+    centroid = face_centroids[i, :]
+
+    # we want to model the sun as a disk: create the plane the disk lies
+    # in first
+
+    n_sun_plane = p_sun - centroid.reshape(3, 1)
+    n_sun_plane /= np.linalg.norm(n_sun_plane)
+    n_sun_plane = n_sun_plane.flatten()
+
+    t_sun_plane = np.random.randn(3, 1)
+    t_sun_plane = (np.eye(3) - n_sun_plane@n_sun_plane.T)@t_sun_plane
+    t_sun_plane = t_sun_plane.flatten()
+
+    n_sun_plane = n_sun_plane.flatten()
+
+    b_sun_plane = np.cross(t_sun_plane, n_sun_plane)
+
+    # sample a uniform random distribution of points on the disk
+    # TODO: we can probably do much better than this
+
+    X, Y = points.fibonacci_spiral(50)
+
+    Xt = X.reshape(X.size, 1)*t_sun_plane
+    Yt = Y.reshape(Y.size, 1)*b_sun_plane
+
+    disk = p_sun.T + r_sun*(Xt + Yt)
+
+    BTN = get_frenet_frame(i, order='btn')
+
+    dirs = disk - centroid
+    dirs /= np.sqrt(np.sum(dirs**2, 1)).reshape(dirs.shape[0], 1)
+    dirs = dirs@BTN
+
+    dirs_Theta = np.arccos(dirs[:, 2])
+    dirs_Phi = np.mod(np.arctan2(dirs[:, 1], dirs[:, 0]), 2*np.pi)
+
+    # check which points are above the horizon
+
+    H_Theta = H[i, :]
+    nPhi = H_Theta.size
+    H_Phi = np.linspace(0, 2*np.pi, nPhi)
+    deltaPhi = 2*np.pi/(nPhi - 1)
+    I = np.floor(dirs_Phi/deltaPhi).astype(np.uint16)
+    t = (dirs_Phi - H_Phi[I])/(H_Phi[I + 1] - H_Phi[I])
+    AboveH = dirs_Theta < (1 - t)*H_Theta[I] + t*H_Theta[I + 1]
+    Ratio = AboveH.sum()/AboveH.size
+
+    return Ratio, AboveH, dirs_Phi, dirs_Theta
+
+
+# position the sun randomly
+
+d_sun = 227390024000 # m
+diam_sun = 1391400000 # m
+r_sun = diam_sun/2 # m
+
+p_sun = np.random.randn(3, 1)
+n_sun = p_sun/np.linalg.norm(p_sun)
+p_sun = d_sun*n_sun
+
+# plot horizon w/ sun
+
+i = np.random.randint(nfaces)
+Ratio, AboveH, dirs_Phi, dirs_Theta = check_visibility(i, p_sun, r_sun)
+
+fig = plt.figure()
+ax = plot_horizon(111, i)
+ax.scatter(dirs_Phi[AboveH], dirs_Theta[AboveH], 1, 'r')
+ax.scatter(dirs_Phi[~AboveH], dirs_Theta[~AboveH], 1, 'b')
+fig.show()
+
+# plot ratios on surface
+
+Ratios = np.zeros(nfaces)
+for i in range(nfaces):
+    print(i)
+    Ratio, AboveH, dirs_Phi, dirs_Theta = check_visibility(i, p_sun, r_sun)
+    Ratios[i] = Ratio
+
+Sun_normals = p_sun.T - face_centroids
+Sun_normals /= np.sqrt(np.sum(Sun_normals**2, 1)).reshape(nfaces, 1)
+Cosines = np.sum(Sun_normals*face_normals, 1)
+
+C = Ratios*Cosines
+
+fig = mlab.gcf()
+mlab.clf()
+
+mesh = mlab.triangular_mesh(*V.T, F, representation='wireframe', opacity=0)
+mesh.mlab_source.dataset.cell_data.scalars = C
+mesh.mlab_source.dataset.cell_data.scalars.name = 'face_color'
+mesh.mlab_source.update()
+mesh2 = mlab.pipeline.set_active_attribute(mesh, cell_scalars='face_color')
+surf = mlab.pipeline.surface(mesh2, colormap='gray')
+
+mlab.show()
