@@ -132,5 +132,35 @@ int main(int argc, char * argv[])
 
     horizons.save(arma::hdf5_name("horizons.h5", "horizons"));
 
+  } else if (task == "ratios") {
+
+    std::cout << "- building horizon map";
+    tic();
+
+    arma::mat horizons;
+    context.make_horizons(horizons, nphi, theta_eps, offset);
+
+    std::cout << " [" << toc() << "s]" << std::endl;
+
+    std::cout << "- computing ratios";
+    tic();
+
+    auto d_sun = 227390024000.; // m
+    auto r_sun = 1391400000./2.; // m
+    auto sun_position = r_sun*normalise(arma::randn<arma::vec>(3));
+
+    arma::mat disk_xy;
+    fib_spiral(disk_xy, 100);
+
+    arma::vec ratios;
+
+    context.compute_visibility_ratios(
+      horizons,
+      sun_position,
+      disk_xy,
+      ratios,
+      r_sun);
+
+    std::cout << " [" << toc() << "s]" << std::endl;
   }
 }
