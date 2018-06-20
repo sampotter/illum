@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 plt.ion()
 
 import h5py
+import numba
 import numpy as np
 import scipy.sparse
 import trimesh
@@ -19,36 +20,41 @@ from sparse import *
 ################################################################################
 # IMPORT GEOMETRY
 
-tri = trimesh.load('../../data/SHAPE0_dec5000.obj')
-
+# tri = trimesh.load('../../data/SHAPE0_dec5000.obj')
+tri = trimesh.load('../../data/SHAPE0.OBJ')
 F = tri.faces
 V = tri.vertices
-
-face_normals = np.zeros(F.shape)
-face_centroids = np.zeros(F.shape)
-
-for i, face in enumerate(F):
-    v0, v1, v2 = V[face]
-    face_centroids[i, :] = (v0 + v1 + v2)/3
-    n = np.cross(v1 - v0, v2 - v0)
-    n /= np.linalg.norm(n)
-    if np.dot(n, tri.vertex_normals[face[0]]) < 0:
-        n *= -1
-    face_normals[i, :] = n
-
 nfaces = F.shape[0]
 nverts = V.shape[0]
 
-N = face_normals
-P = face_centroids
+def compute_face_normals_and_centroids():
+    face_normals = np.zeros(F.shape)
+    face_centroids = np.zeros(F.shape)
+    for i, face in enumerate(F):
+        v0, v1, v2 = V[face]
+        face_centroids[i, :] = (v0 + v1 + v2)/3
+        n = np.cross(v1 - v0, v2 - v0)
+        n /= np.linalg.norm(n)
+        if np.dot(n, tri.vertex_normals[face[0]]) < 0:
+            n *= -1
+        face_normals[i, :] = n
+    return face_normals, face_centroids
 
-T = np.zeros_like(N)
-B = np.zeros_like(N)
-for i, face in enumerate(F):
-    v0, v1, v2 = V[F[i]]
-    T[i, :] = v1 - v0
-    T[i, :] /= np.linalg.norm(T[i, :])
-    B[i, :] = np.cross(T[i, :], N[i, :])
+print('- computing faces normals and centroids')
+N, P = compute_face_normals_and_centroids()
+
+def compute_face_tangents_and_bivectors():
+    T = np.zeros_like(N)
+    B = np.zeros_like(N)
+    for i, face in enumerate(F):
+        v0, v1, v2 = V[F[i]]
+        T[i, :] = v1 - v0
+        T[i, :] /= np.linalg.norm(T[i, :])
+        B[i, :] = np.cross(T[i, :], N[i, :])
+    return T, B
+
+print('- compute face tangents and bivectors')
+T, B = compute_face_tangents_and_bivectors()
 
 def get_frenet_frame(i, order='btn'):
     assert(len(order) == 3)
@@ -103,7 +109,7 @@ fig.show()
 ################################################################################
 # HORIZON MAPS
 
-j = 1200 # test a face
+j = np.random.randint(nfaces) # test a face
 v_j = np.mean(V[F[j]], 0) # get centroid
 BTN_j = get_frenet_frame(j)
 I_vis = np.nonzero(V_arma[:, j])[0]
@@ -150,7 +156,7 @@ plt.show()
 ################################################################################
 # PLOT VISIBILITY FOR ONE FACE
 
-j = 340
+j = np.random.randint(nfaces)
 C = np.array(A_after.getrow(j).todense(), dtype=np.float).flatten()
 C[j] = -1
 
@@ -254,12 +260,12 @@ fig.show()
 
 def check_visibility(i, p_sun, r_sun):
 
-    centroid = face_centroids[i, :]
+    p = P[i, :]
 
     # we want to model the sun as a disk: create the plane the disk lies
     # in first
 
-    n_sun_plane = p_sun - centroid.reshape(3, 1)
+    n_sun_plane = p_sun - p.reshape(3, 1)
     n_sun_plane /= np.linalg.norm(n_sun_plane)
     n_sun_plane = n_sun_plane.flatten()
 
@@ -283,7 +289,7 @@ def check_visibility(i, p_sun, r_sun):
 
     BTN = get_frenet_frame(i, order='btn')
 
-    dirs = disk - centroid
+    dirs = disk - p
     dirs /= np.sqrt(np.sum(dirs**2, 1)).reshape(dirs.shape[0], 1)
     dirs = dirs@BTN
 
@@ -333,14 +339,13 @@ for i in range(nfaces):
     Ratio, AboveH, dirs_Phi, dirs_Theta = check_visibility(i, p_sun, r_sun)
     Ratios[i] = Ratio
 
-Sun_normals = p_sun.T - face_centroids
+Sun_normals = p_sun.T - P
 Sun_normals /= np.sqrt(np.sum(Sun_normals**2, 1)).reshape(nfaces, 1)
-Cosines = np.sum(Sun_normals*face_normals, 1)
+Cosines = np.sum(Sun_normals*N, 1)
 
 C = Ratios*Cosines
 
-fig = mlab.gcf()
-mlab.clf()
+fig = mlab.figure(bgcolor=(0, 0, 0))
 
 mesh = mlab.triangular_mesh(*V.T, F, representation='wireframe', opacity=0)
 mesh.mlab_source.dataset.cell_data.scalars = C

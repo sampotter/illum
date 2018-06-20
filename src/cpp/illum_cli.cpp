@@ -7,68 +7,10 @@
 #include <string>
 #include <vector>
 
-#include <armadillo>
 #include <cxxopts.hpp>
-#include <fastbvh>
-#define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
 
 #include "illum.hpp"
 #include "timer.hpp"
-
-float eps = 0;
-
-std::vector<Object *> get_objects(tinyobj::attrib_t const & attrib,
-								  tinyobj::shape_t const & shape) {
-  std::vector<Object *> objects;
-
-  auto const & mesh = shape.mesh;
-  auto const & indices = mesh.indices;
-  auto const & vertices = attrib.vertices;
-  auto const & normals = attrib.normals;
-
-  for (int i = 0; i < indices.size(); i += 3) {
-    tinyobj::index_t i0 = indices[i], i1 = indices[i + 1], i2 = indices[i + 2];
-
-    auto const v0 = Vector3 {
-      vertices[3*i0.vertex_index],
-      vertices[3*i0.vertex_index + 1],
-      vertices[3*i0.vertex_index + 2]
-    };
-
-    auto const v1 = Vector3 {
-      vertices[3*i1.vertex_index],
-      vertices[3*i1.vertex_index + 1],
-      vertices[3*i1.vertex_index + 2]
-    };
-
-    auto const v2 = Vector3 {
-      vertices[3*i2.vertex_index],
-      vertices[3*i2.vertex_index + 1],
-      vertices[3*i2.vertex_index + 2]
-    };
-
-    // If the face normal index isn't set, then we can compute the
-    // face normal by taking the cross product of the triangle
-    // edges. To ensure a consistent orientation, we can take the dot
-    // product between the candidate face normal and one of the vertex
-    // normals.
-
-    Vector3 n = normalize((v1 - v0)^(v2 - v0));
-    Vector3 n0 {
-      normals[3*i0.vertex_index],
-      normals[3*i0.vertex_index + 1],
-      normals[3*i0.vertex_index + 2]
-    };
-    if (n*n0 < 0) {
-      n = -n;
-    }
-
-    objects.push_back(new Tri(v0, v1, v2, n, i/3));
-  }
-
-  return objects;
-}
 
 template <typename T>
 std::pair<arma::uvec, arma::uvec> get_rowinds_and_colptrs(arma::SpMat<T> const & S) {
@@ -151,46 +93,26 @@ int main(int argc, char * argv[])
   auto theta_eps = args["eps"].as<double>();
   auto nphi = args["nphi"].as<int>();
 
-  /**
-   * Use tinyobjloader to load selected obj file.
-   */
-  tinyobj::attrib_t attrib;
-  std::vector<tinyobj::shape_t> shapes;
-  std::vector<tinyobj::material_t> materials;
-  std::string err;
-  bool ret = tinyobj::LoadObj(
-    &attrib, &shapes, &materials, &err, path.c_str());
-
-  /**
-   * Build a vector of objects for use with our bounding volume
-   * hierarchy library (fastbvh).
-   */
-  tinyobj::shape_t & shape = shapes[shape_index];
-  std::vector<Object *> objects = get_objects(attrib, shape);
-  std::vector<Object *> bvh_objects(objects.begin(), objects.end());
-
-  auto nfaces = objects.size();
-
-  /**
-   * Build the BVH.
-   */
-  BVH bvh(&bvh_objects);
+  illum_context context {path.c_str(), shape_index};
 
   if (task == "visibility") {
 
     std::cout << "- assembling A";
     tic();
-    auto A_before = compute_A(objects);
+    arma::sp_umat A_before;
+    context.make_A(A_before);
     std::cout << " [" << toc() << "s]" << std::endl;
 
     std::cout << "- pruning A";
     tic();
-    auto A_after = prune_A(bvh, objects, A_before, offset);
+    arma::sp_umat A_after;
+    context.prune_A(A_before, A_after, offset);
     std::cout << " [" << toc() << "s]" << std::endl;
 
     std::cout << "- computing V";
     tic();
-    auto V = compute_V(A_after);
+    arma::sp_umat V;
+    compute_V(A_after, V);
     std::cout << " [" << toc() << "s]" << std::endl;
 
     std::cout << "- writing HDF5 files";
@@ -204,10 +126,11 @@ int main(int argc, char * argv[])
 
     std::cout << "- building horizon map";
     tic();
-    auto H = build_horizon_map(objects, bvh, nphi, theta_eps, offset);
+    arma::mat horizons;
+    context.make_horizons(horizons, nphi, theta_eps, offset);
     std::cout << " [" << toc() << "s]" << std::endl;
 
-    H.save(arma::hdf5_name("horizons.h5", "horizons"));
+    horizons.save(arma::hdf5_name("horizons.h5", "horizons"));
 
   }
 }
