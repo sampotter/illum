@@ -19,5 +19,7 @@ private:
 };
 
 void compute_V(arma::sp_umat const & A, arma::sp_umat & V);
-  
+
+void fib_spiral(arma::mat & xy, int n);
+
 #endif // __ILLUM_HPP__

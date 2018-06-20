@@ -318,3 +318,20 @@ void compute_V(arma::sp_umat const & A, arma::sp_umat & V)
 {
   V = A.t()%A;
 }
+
+void fib_spiral(arma::mat & xy, int n)
+{
+  static auto TWO_PI = 2*arma::datum::pi;
+
+  xy.set_size(n, 2);
+
+  auto a = 0., da = TWO_PI*(arma::datum::gratio - 1)/arma::datum::gratio;
+  auto r = 0., dr = 1./(n + 1);
+
+  for (int i = 0; i < n; ++i) {
+    xy(i, 0) = r*std::cos(a);
+    xy(i, 1) = r*std::sin(a);
+    a = std::fmod(a + da, TWO_PI);
+    r += dr;
+  }
+}
