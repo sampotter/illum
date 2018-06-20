@@ -271,6 +271,7 @@ def check_visibility(i, p_sun, r_sun):
 
     t_sun_plane = np.random.randn(3, 1)
     t_sun_plane = (np.eye(3) - n_sun_plane@n_sun_plane.T)@t_sun_plane
+    t_sun_plane /= np.linalg.norm(t_sun_plane)
     t_sun_plane = t_sun_plane.flatten()
 
     n_sun_plane = n_sun_plane.flatten()
@@ -355,3 +356,4 @@ mesh2 = mlab.pipeline.set_active_attribute(mesh, cell_scalars='face_color')
 surf = mlab.pipeline.surface(mesh2, colormap='gray')
 
 mlab.show()
+
