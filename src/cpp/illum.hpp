@@ -12,6 +12,11 @@ struct illum_context {
   void prune_A(arma::sp_umat const & A, arma::sp_umat & pruned, double offset = 1e-5);
   void make_horizons(arma::mat & horizons, int nphi = 361, double theta_eps = 1e-3,
                      double offset = 1e-5);
+  void compute_visibility_ratios(arma::mat const & horizons,
+                                 arma::vec const & sun_position,
+                                 arma::mat const & disk_xy,
+                                 arma::vec & ratios,
+                                 double sun_radius);
   
 private:
   struct impl;

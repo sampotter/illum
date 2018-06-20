@@ -85,6 +85,11 @@ struct illum_context::impl
   void prune_A(arma::sp_umat const & A, arma::sp_umat & pruned, double offset = 1e-5);
   void make_horizons(arma::mat & horizons, int nphi = 361, double theta_eps = 1e-3,
                      double offset = 1e-5);
+  void compute_visibility_ratios(arma::mat const & horizons,
+                                 arma::vec const & sun_position,
+                                 arma::mat const & disk_xy,
+                                 arma::vec & ratios,
+                                 double sun_radius);
 
   std::vector<Object *> objects;
   std::vector<Object *> bvh_objects;
@@ -115,6 +120,22 @@ illum_context::make_horizons(arma::mat & horizons, int nphi, double theta_eps,
                              double offset)
 {
   pimpl->make_horizons(horizons, nphi, theta_eps, offset);
+}
+
+void
+illum_context::compute_visibility_ratios(
+  arma::mat const & horizons,
+  arma::vec const & sun_position,
+  arma::mat const & disk_xy,
+  arma::vec & ratios,
+  double sun_radius)
+{
+  pimpl->compute_visibility_ratios(
+    horizons,
+    sun_position,
+    disk_xy,
+    ratios,
+    sun_radius);
 }
 
 void
@@ -317,6 +338,68 @@ illum_context::impl::make_horizons(arma::mat & horizons, int nphi,
 void compute_V(arma::sp_umat const & A, arma::sp_umat & V)
 {
   V = A.t()%A;
+}
+
+void
+illum_context::impl::compute_visibility_ratios(
+  arma::mat const & horizons,
+  arma::vec const & sun_position,
+  arma::mat const & disk_XY,
+  arma::vec & ratios,
+  double sun_radius)
+{
+  using namespace arma;
+
+  static const auto TWO_PI = 2*arma::datum::pi;
+
+  ratios.set_size(objects.size());
+
+  auto nphi = horizons.n_cols;
+  auto delta_phi = TWO_PI/(nphi - 1);
+
+  for (int i = 0; i < objects.size(); ++i) {
+    auto obj = objects[i];
+
+    vec::fixed<3> p;
+    {
+      auto centroid = obj->getCentroid();
+      p(0) = centroid[0];
+      p(1) = centroid[1];
+      p(2) = centroid[2];
+    }
+
+    auto d = sun_position - p;
+
+    auto n = normalise(d);
+    auto t = normalise((eye(3, 3) - n*n.t())*randn<vec>(3));
+    auto b = cross(t, n);
+
+    mat disk = sun_radius*(t*disk_XY.col(0).t() + n*disk_XY.col(1).t());
+
+    auto btn = get_frenet_frame(static_cast<Tri const *>(obj));
+
+    auto horizon = horizons.row(i);
+
+    int count = 0;
+
+    for (int j = 0; j < disk_XY.n_rows - 1; ++j) {
+      vec::fixed<3> dir = btn.t()*normalise(d + disk.row(j));
+
+      // TODO: not necessary---could store the horizons in the correct
+      // format in the first place
+      auto phi = std::fmod(std::atan2(dir(1), dir(0)), TWO_PI);
+      auto theta = std::acos(dir(2));
+
+      auto phi_index = static_cast<int>(std::floor(phi/delta_phi));
+      auto t = (phi - phi_index*delta_phi)/delta_phi;
+
+      if (theta < (1 - t)*horizon(phi_index) + t*horizon(phi_index + 1)) {
+        ++count;
+      }
+    }
+
+    ratios(i) = count/(nphi - 1);
+  }
 }
 
 void fib_spiral(arma::mat & xy, int n)
