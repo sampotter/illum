@@ -14,11 +14,13 @@ include (${VTK_USE_FILE})
 add_subdirectory (armadillo)
 add_subdirectory (cxxopts)
 add_subdirectory (fastbvh)
+add_subdirectory (tbb)
 add_subdirectory (tinyobjloader)
 
 add_library (illum illum.cpp)
 target_link_libraries (illum PUBLIC armadillo)
 target_link_libraries (illum PRIVATE fastbvh)
+target_link_libraries (illum PRIVATE tbb)
 target_link_libraries (illum PRIVATE tinyobjloader)
 target_compile_features (illum PRIVATE cxx_std_14)
 
