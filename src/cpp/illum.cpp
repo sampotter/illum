@@ -350,11 +350,13 @@ illum_context::impl::compute_visibility_ratios(
 {
   using namespace arma;
 
+  assert(horizons.n_cols == objects.size());
+
   static const auto TWO_PI = 2*arma::datum::pi;
 
   ratios.set_size(objects.size());
 
-  auto nphi = horizons.n_cols;
+  auto nphi = horizons.n_rows;
   auto delta_phi = TWO_PI/(nphi - 1);
 
   for (int i = 0; i < objects.size(); ++i) {
@@ -370,24 +372,29 @@ illum_context::impl::compute_visibility_ratios(
 
     auto d = sun_position - p;
 
-    auto n = normalise(d);
-    auto t = normalise((eye(3, 3) - n*n.t())*randn<vec>(3));
-    auto b = cross(t, n);
+    auto N = normalise(d);
+    vec::fixed<3> T = normalise((eye(3, 3) - N*N.t())*randn<vec>(3));
+    vec::fixed<3> B = cross(T, N);
 
-    mat disk = sun_radius*(t*disk_XY.col(0).t() + n*disk_XY.col(1).t());
+    mat disk(3, disk_XY.n_rows);
+    for (int j = 0; j < disk_XY.n_rows; ++j) {
+      disk.col(j) = sun_radius*(disk_XY(j, 0)*T + disk_XY(j, 1)*B);
+    }
 
     auto btn = get_frenet_frame(static_cast<Tri const *>(obj));
 
-    auto horizon = horizons.row(i);
+    arma::vec horizon = horizons.col(i);
 
     int count = 0;
 
     for (int j = 0; j < disk_XY.n_rows - 1; ++j) {
-      vec::fixed<3> dir = btn.t()*normalise(d + disk.row(j));
+      vec::fixed<3> dir = btn.t()*normalise(d + disk.col(j));
 
       // TODO: not necessary---could store the horizons in the correct
       // format in the first place
-      auto phi = std::fmod(std::atan2(dir(1), dir(0)), TWO_PI);
+      auto phi = std::atan2(dir(1), dir(0));
+      if (phi < 0) phi += TWO_PI;
+
       auto theta = std::acos(dir(2));
 
       auto phi_index = static_cast<int>(std::floor(phi/delta_phi));
