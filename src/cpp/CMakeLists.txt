@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.10)
+cmake_minimum_required (VERSION 3.11)
 
 project (illum)
 
@@ -17,7 +17,8 @@ add_subdirectory (fastbvh)
 add_subdirectory (tbb)
 add_subdirectory (tinyobjloader)
 
-add_library (illum illum.cpp)
+add_library (illum)
+target_sources (illum PRIVATE illum.cpp)
 target_link_libraries (illum PUBLIC armadillo)
 target_link_libraries (illum PRIVATE fastbvh)
 target_link_libraries (illum PRIVATE tbb)
