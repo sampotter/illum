@@ -97,7 +97,7 @@ struct illum_context::impl
 };
 
 illum_context::illum_context(char const * path, int shape_index):
-  pimpl {std::make_unique<illum_context::impl>(get_objects(path, shape_index))}
+  pimpl {new illum_context::impl {get_objects(path, shape_index)}}
 {}
 
 illum_context::~illum_context() = default;
