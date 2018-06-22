@@ -42,3 +42,12 @@
 ** TODO Read Ingersoll paper
 ** TODO Recreate Ingersoll results
 ** TODO Derive recurrence for illumination
+* Implementation
+** TODO Get fastbvh to use fixed armadillo vectors
+** TODO Use fixed armadillo vectors wherever possible
+** TODO Enable OpenMP
+** TODO GPU matrix multiplication
+** TODO MPI horizons
+** TODO Parallelize visibility
+   - [ ] TBB
+   - [ ] OpenMP
