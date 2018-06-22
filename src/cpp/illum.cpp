@@ -8,7 +8,11 @@
 #include <unordered_map>
 #include <vector>
 
-std::vector<Object *> get_objects(const char * path, int shape_index) {
+std::vector<Object *>
+get_objects(
+  const char * path,
+  int shape_index)
+{
   /**
    * Use tinyobjloader to load selected obj file.
    */
@@ -97,7 +101,9 @@ struct illum_context::impl
   BVH bvh;
 };
 
-illum_context::illum_context(char const * path, int shape_index):
+illum_context::illum_context(
+  char const * path,
+  int shape_index):
   pimpl {std::make_unique<illum_context::impl>(get_objects(path, shape_index))}
 {}
 
@@ -110,15 +116,20 @@ illum_context::make_A(arma::sp_umat & A)
 }
 
 void
-illum_context::prune_A(arma::sp_umat const & A, arma::sp_umat & pruned,
-                       double offset)
+illum_context::prune_A(
+  arma::sp_umat const & A,
+  arma::sp_umat & pruned,
+  double offset)
 {
   pimpl->prune_A(A, pruned, offset);
 }
 
 void
-illum_context::make_horizons(arma::mat & horizons, int nphi, double theta_eps,
-                             double offset)
+illum_context::make_horizons(
+  arma::mat & horizons,
+  int nphi,
+  double theta_eps,
+  double offset)
 {
   pimpl->make_horizons(horizons, nphi, theta_eps, offset);
 }
@@ -323,8 +334,11 @@ trace_horizon(
 }
 
 void
-illum_context::impl::make_horizons(arma::mat & horizons, int nphi,
-                                   double theta_eps, double offset)
+illum_context::impl::make_horizons(
+  arma::mat & horizons,
+  int nphi,
+  double theta_eps,
+  double offset)
 {
   auto phis = arma::linspace(0, 2*arma::datum::pi, nphi);
 
@@ -340,7 +354,10 @@ illum_context::impl::make_horizons(arma::mat & horizons, int nphi,
   tbb::parallel_for(tbb::blocked_range<int>(0, objects.size()), func);
 }
 
-void compute_V(arma::sp_umat const & A, arma::sp_umat & V)
+void
+compute_V(
+  arma::sp_umat const & A,
+  arma::sp_umat & V)
 {
   V = A.t()%A;
 }
