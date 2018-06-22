@@ -11,6 +11,8 @@ endif ()
 find_package (VTK)
 include (${VTK_USE_FILE})
 
+set (TBB_BUILD_TESTS OFF CACHE BOOL "Build TBB tests and enable testing")
+
 add_subdirectory (armadillo)
 add_subdirectory (cxxopts)
 add_subdirectory (fastbvh)
