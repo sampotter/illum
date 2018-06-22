@@ -2,6 +2,8 @@ cmake_minimum_required (VERSION 3.11)
 
 project (illum)
 
+option (USE_TBB "Use TBB to parallelize" OFF)
+
 include (CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG ("-march=native" COMPILER_SUPPORTS_MARCH_NATIVE)
 if (COMPILER_SUPPORTS_MARCH_NATIVE)
@@ -11,19 +13,26 @@ endif ()
 find_package (VTK)
 include (${VTK_USE_FILE})
 
-set (TBB_BUILD_TESTS OFF CACHE BOOL "Build TBB tests and enable testing")
+if (USE_TBB)
+  set (TBB_BUILD_TESTS OFF CACHE BOOL "Build TBB tests and enable testing")
+  add_subdirectory (tbb)
+endif ()
 
 add_subdirectory (armadillo)
 add_subdirectory (cxxopts)
 add_subdirectory (fastbvh)
-add_subdirectory (tbb)
 add_subdirectory (tinyobjloader)
+
+configure_file (config.hpp.in config.hpp)
 
 add_library (illum)
 target_sources (illum PRIVATE illum.cpp)
+target_include_directories (illum PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries (illum PUBLIC armadillo)
 target_link_libraries (illum PRIVATE fastbvh)
-target_link_libraries (illum PRIVATE tbb)
+if (USE_TBB)
+  target_link_libraries (illum PRIVATE tbb)
+endif ()
 target_link_libraries (illum PRIVATE tinyobjloader)
 target_compile_features (illum PRIVATE cxx_std_14)
 

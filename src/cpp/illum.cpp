@@ -1,9 +1,14 @@
 #include "illum.hpp"
 
+#include <config.hpp>
+
 #include <fastbvh>
-#include <tbb/tbb.h>
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
+
+#if USE_TBB
+#  include <tbb/tbb.h>
+#endif
 
 #include <unordered_map>
 #include <vector>
@@ -344,14 +349,18 @@ illum_context::impl::make_horizons(
 
   horizons.set_size(nphi, objects.size());
 
-  auto func = [&] (tbb::blocked_range<int> const & range) {
-    for (int i = range.begin(); i != range.end(); ++i) {
-      auto tri = static_cast<Tri const *>(objects[i]);
-      horizons.col(i) = trace_horizon(tri, bvh, phis, theta_eps, offset);
-    }
+  auto const compute_horizon = [&] (int i) {
+    auto tri = static_cast<Tri const *>(objects[i]);
+    horizons.col(i) = trace_horizon(tri, bvh, phis, theta_eps, offset);
   };
 
-  tbb::parallel_for(tbb::blocked_range<int>(0, objects.size()), func);
+#if USE_TBB
+  tbb::parallel_for(size_t(0), objects.size(), compute_horizon);
+#else
+  for (int i = 0; i < objects.size(); ++i) {
+    compute_horizon(i);
+  }
+#endif
 }
 
 void
@@ -381,58 +390,62 @@ illum_context::impl::compute_visibility_ratios(
   auto nphi = horizons.n_rows;
   auto delta_phi = TWO_PI/(nphi - 1);
 
-  auto const func = [&] (tbb::blocked_range<int> const & range) {
-    for (int i = range.begin(); i != range.end(); ++i) {
-      auto obj = objects[i];
+  auto const compute_ratio = [&] (int i) {
+    auto obj = objects[i];
 
-      vec::fixed<3> p;
-      {
-        auto centroid = obj->getCentroid();
-        p(0) = centroid[0];
-        p(1) = centroid[1];
-        p(2) = centroid[2];
-      }
-
-      auto d = sun_position - p;
-
-      auto N = normalise(d);
-      vec::fixed<3> T = normalise((eye(3, 3) - N*N.t())*randn<vec>(3));
-      vec::fixed<3> B = cross(T, N);
-
-      mat disk(3, disk_XY.n_rows);
-      for (int j = 0; j < disk_XY.n_rows; ++j) {
-        disk.col(j) = sun_radius*(disk_XY(j, 0)*T + disk_XY(j, 1)*B);
-      }
-
-      auto btn = get_frenet_frame(static_cast<Tri const *>(obj));
-
-      arma::vec horizon = horizons.col(i);
-
-      int count = 0;
-
-      for (int j = 0; j < disk_XY.n_rows - 1; ++j) {
-        vec::fixed<3> dir = btn.t()*normalise(d + disk.col(j));
-
-        // TODO: not necessary---could store the horizons in the correct
-        // format in the first place
-        auto phi = std::atan2(dir(1), dir(0));
-        if (phi < 0) phi += TWO_PI;
-
-        auto theta = std::acos(dir(2));
-
-        auto phi_index = static_cast<int>(std::floor(phi/delta_phi));
-        auto t = (phi - phi_index*delta_phi)/delta_phi;
-
-        if (theta < (1 - t)*horizon(phi_index) + t*horizon(phi_index + 1)) {
-          ++count;
-        }
-      }
-
-      ratios(i) = count/(nphi - 1);
+    vec::fixed<3> p;
+    {
+      auto centroid = obj->getCentroid();
+      p(0) = centroid[0];
+      p(1) = centroid[1];
+      p(2) = centroid[2];
     }
+
+    auto d = sun_position - p;
+
+    auto N = normalise(d);
+    vec::fixed<3> T = normalise((eye(3, 3) - N*N.t())*randn<vec>(3));
+    vec::fixed<3> B = cross(T, N);
+
+    mat disk(3, disk_XY.n_rows);
+    for (int j = 0; j < disk_XY.n_rows; ++j) {
+      disk.col(j) = sun_radius*(disk_XY(j, 0)*T + disk_XY(j, 1)*B);
+    }
+
+    auto btn = get_frenet_frame(static_cast<Tri const *>(obj));
+
+    arma::vec horizon = horizons.col(i);
+
+    int count = 0;
+
+    for (int j = 0; j < disk_XY.n_rows - 1; ++j) {
+      vec::fixed<3> dir = btn.t()*normalise(d + disk.col(j));
+
+      // TODO: not necessary---could store the horizons in the correct
+      // format in the first place
+      auto phi = std::atan2(dir(1), dir(0));
+      if (phi < 0) phi += TWO_PI;
+
+      auto theta = std::acos(dir(2));
+
+      auto phi_index = static_cast<int>(std::floor(phi/delta_phi));
+      auto t = (phi - phi_index*delta_phi)/delta_phi;
+
+      if (theta < (1 - t)*horizon(phi_index) + t*horizon(phi_index + 1)) {
+        ++count;
+      }
+    }
+
+    ratios(i) = count/(nphi - 1);
   };
 
-  tbb::parallel_for(tbb::blocked_range<int>(0, objects.size()), func);
+#if USE_TBB
+  tbb::parallel_for(size_t(0), objects.size(), compute_ratio);
+#else
+  for (int i = 0; i < objects.size(); ++i) {
+    compute_ratio(i);
+  }
+#endif
 }
 
 void fib_spiral(arma::mat & xy, int n)
