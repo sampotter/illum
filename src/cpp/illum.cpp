@@ -280,9 +280,7 @@ get_frenet_frame(Tri const * tri)
  * bvh: bounding volume hierarchy used to accelerated raytracing
  * phis: vector of horizon abscissae (values in [0, 2pi))
  * thetas: theta values over which to search for horizon
- * 
- * TODO: add a perturbation parameter (amount to lift observer away
- * from ground to get higher vantage point)
+ * offset: the normal displacement away from the plane of the triangle
  *
  * returns: vector of horizon angles (thetas) for each abscissa phi
  */
