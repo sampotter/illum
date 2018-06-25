@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <set>
 #include <string>
@@ -57,6 +58,13 @@ void write_coo(arma::sp_umat const & S, const char * path) {
 
 void usage(std::string const & argv0) {
   std::cout << "usage: " << argv0 << std::endl;
+}
+
+void timed(std::string const & message, std::function<void()> func) {
+  std::cout << message << std::flush;
+  tic();
+  func();
+  std::cout << " [" << toc() << "s]" << std::endl;
 }
 
 int main(int argc, char * argv[])
@@ -123,89 +131,74 @@ int main(int argc, char * argv[])
 
   if (task == "visibility") {
 
-    std::cout << "- assembling A";
-    tic();
-    arma::sp_umat A_before;
-    context.make_A(A_before);
-    std::cout << " [" << toc() << "s]" << std::endl;
+    arma::sp_umat A_before, A_after, V;
 
-    std::cout << "- pruning A";
-    tic();
-    arma::sp_umat A_after;
-    context.prune_A(A_before, A_after, offset);
-    std::cout << " [" << toc() << "s]" << std::endl;
+    timed("- assembling A", [&] () { context.make_A(A_before); });
 
-    std::cout << "- computing V";
-    tic();
-    arma::sp_umat V;
-    compute_V(A_after, V);
-    std::cout << " [" << toc() << "s]" << std::endl;
+    timed("- pruning A", [&] () { context.prune_A(A_before, A_after, offset); });
 
-    std::cout << "- writing HDF5 files";
-    tic();
-    write_csc_inds(A_before, "A_before.h5");
-    write_csc_inds(A_after, "A_after.h5");
-    write_csc_inds(V, "V.h5");
-    std::cout << " [" << toc() << "s]" << std::endl;
+    timed("- computing V", [&] () { compute_V(A_after, V); });
+
+    timed("- writing HDF5 files", [&] () {
+      write_csc_inds(A_before, "A_before.h5");
+      write_csc_inds(A_after, "A_after.h5");
+      write_csc_inds(V, "V.h5");
+    });
 
   } else if (task == "horizons") {
 
-    std::cout << "- building horizon map";
-    tic();
     arma::mat horizons;
-    context.make_horizons(horizons, nphi, theta_eps, offset);
-    std::cout << " [" << toc() << "s]" << std::endl;
+
+    timed(
+      "- building horizon map",
+      [&] () {
+        context.make_horizons(horizons, nphi, theta_eps, offset);
+      });
 
     if (!output_file) {
       *output_file = "horizons.h5";
     }
-    std::cout << "- saving horizon map to " << *output_file;
-    tic();
-    horizons.save(arma::hdf5_name(*output_file, "horizons"));
-    std::cout << " [" << toc() << "s]" << std::endl;
+
+    timed(
+      "- saving horizon map to " + *output_file,
+      [&] () {
+        horizons.save(arma::hdf5_name(*output_file, "horizons"));
+      });
 
   } else if (task == "ratios") {
 
     arma::mat horizons;
 
     if (horizon_file) {
-      std::cout << "- loading horizon map from " << *horizon_file;
-      std::cout << std::flush;
-      tic();
-
-      horizons.load(arma::hdf5_name(*horizon_file, "horizons"));
-
-      std::cout << " [" << toc() << "s]" << std::endl;
+      timed(
+        "- loading horizon map from " + *horizon_file,
+        [&] () {
+          horizons.load(arma::hdf5_name(*horizon_file, "horizons"));
+        });
     } else {
-      std::cout << "- building horizon map";
-      std::cout << std::flush;
-      tic();
-
-      context.make_horizons(horizons, nphi, theta_eps, offset);
-
-      std::cout << " [" << toc() << "s]" << std::endl;
+      timed(
+        "- building horizon map",
+        [&] () {
+          context.make_horizons(horizons, nphi, theta_eps, offset);
+        });
     }
 
-    std::cout << "- computing ratios";
-    std::cout << std::flush;
-    tic();
+    timed("- computing ratios", [&] () {
+      auto d_sun = 227390024000.; // m
+      auto r_sun = 1391400000./2.; // m
+      auto sun_position = r_sun*normalise(arma::randn<arma::vec>(3));
 
-    auto d_sun = 227390024000.; // m
-    auto r_sun = 1391400000./2.; // m
-    auto sun_position = r_sun*normalise(arma::randn<arma::vec>(3));
+      arma::mat disk_xy;
+      fib_spiral(disk_xy, 100);
 
-    arma::mat disk_xy;
-    fib_spiral(disk_xy, 100);
+      arma::vec ratios;
+      context.compute_visibility_ratios(
+        horizons,
+        sun_position,
+        disk_xy,
+        ratios,
+        r_sun);
+    });
 
-    arma::vec ratios;
-
-    context.compute_visibility_ratios(
-      horizons,
-      sun_position,
-      disk_xy,
-      ratios,
-      r_sun);
-
-    std::cout << " [" << toc() << "s]" << std::endl;
   }
 }
