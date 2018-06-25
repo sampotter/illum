@@ -88,7 +88,8 @@ struct illum_context::impl
   impl(std::vector<Object *> objects):
     objects {objects},
     bvh_objects(objects.begin(), objects.end()),
-    bvh {&bvh_objects}
+    bvh {&bvh_objects},
+    num_faces {objects.size()}
   {}
 
   void make_A(arma::sp_umat & A);
@@ -104,6 +105,7 @@ struct illum_context::impl
   std::vector<Object *> objects;
   std::vector<Object *> bvh_objects;
   BVH bvh;
+  size_t num_faces;
 };
 
 illum_context::illum_context(char const * path, int shape_index):
@@ -153,63 +155,137 @@ illum_context::compute_visibility_ratios(
     sun_radius);
 }
 
+#if USE_TBB
+template <class matrix>
+struct join_horiz_reducer
+{
+  join_horiz_reducer(matrix * blocks):
+    blocks {blocks}
+  {
+    puts("A");
+  }
+
+  join_horiz_reducer(join_horiz_reducer<matrix> & other, tbb::split):
+    blocks {other.blocks},
+    blocked {other.blocked}
+  {
+    puts("B");
+  }
+
+  void operator()(tbb::blocked_range<size_t> const & range) {
+    puts("C");
+    for (size_t i = range.begin(); i != range.end(); ++i) {
+      // TODO: would be good to do this without copying, but there's
+      // no insert_cols member function for the sparse
+      // matrices---write one and contribute?
+      blocked = arma::join_horiz(blocked, blocks[i]);
+    }
+    std::cout << blocked.n_rows << " x " << blocked.n_cols << std::endl;
+  }
+
+  void join(join_horiz_reducer const & other) {
+    puts("D");
+    blocked = arma::join_horiz(blocked, other.blocked);
+  }
+
+  matrix * blocks;
+  matrix blocked;
+};
+#endif
+
+// TODO: this is going to be really inefficient---build from
+// std::vectors instead
 void
 illum_context::impl::make_A(arma::sp_umat & A)
 {
-  int nfaces = objects.size();
+  IntersectionInfo unused;
 
-  auto const get_bounding_radius = [] (Tri const * tri) {
-    auto p = tri->getCentroid();
-    return std::max(
-      length(tri->v0 - p),
-      std::max(
-        length(tri->v1 - p),
-        length(tri->v2 - p)));
-  };
+#if USE_TBB
 
-  arma::vec R(nfaces);
-  for (int i = 0; i < nfaces; ++i) {
-    auto tri_i = static_cast<Tri const *>(objects[i]);
-    R(i) = get_bounding_radius(tri_i);
-  }
+  std::vector<arma::sp_umat> cols(num_faces);
 
-  auto const P = [&] (int i) {
-    return objects[i]->getCentroid();
-  };
+  auto const build_col = [&] (size_t j) {
+    std::vector<arma::uword> rowind;
 
-  auto const N = [&] (int i) {
-    IntersectionInfo unused;
-    return objects[i]->getNormal(unused);
-  };
+    auto tri_j = static_cast<Tri const *>(objects[j]);
+    auto p_j = tri_j->getCentroid();
+    auto n_j = tri_j->getNormal(unused);
 
-  // TODO: this is going to be really inefficient---build from
-  // std::vectors instead
-  A = arma::sp_umat(nfaces, nfaces);
-  for (int j = 0; j < nfaces; ++j) {
-    for (int i = 0; i < nfaces; ++i) {
-      if ((P(i) - P(j))*N(j) > -R(i)) {
-        A(i, j) = 1;
+    for (int i = 0; i < num_faces; ++i) {
+      auto tri_i = static_cast<Tri const *>(objects[i]);
+      auto p_i = tri_i->getCentroid();
+      auto r_i = tri_i->getBoundingRadius();
+
+      if ((p_i - p_j)*n_j > -r_i) {
+        rowind.push_back(j);
       }
     }
+
+    cols[j] = arma::sp_umat {
+      arma::uvec(rowind),                          // rowind
+      arma::uvec({0, num_faces}),                  // colptr
+      arma::uvec(rowind.size(), arma::fill::ones), // values
+      num_faces,                                   // n_rows
+      1                                            // n_cols
+    };
+  };
+
+  tbb::parallel_for(size_t(0), num_faces, build_col);
+
+  auto reducer = join_horiz_reducer<arma::sp_umat> {&cols[0]};
+  puts("E");
+  tbb::parallel_reduce(tbb::blocked_range<size_t>(0, num_faces), reducer);
+
+  A = reducer.blocked;
+  
+#else
+
+  std::vector<arma::uword> rowind, colptr;
+
+  colptr.push_back(0);
+
+  for (int j = 0; j < num_faces; ++j) {
+    auto tri_j = static_cast<Tri const *>(objects[j]);
+    auto p_j = tri_j->getCentroid();
+    auto n_j = tri_j->getNormal(unused);
+
+    for (int i = 0; i < num_faces; ++i) {
+      auto tri_i = static_cast<Tri const *>(objects[i]);
+      auto p_i = tri_i->getCentroid();
+      auto r_i = tri_i->getBoundingRadius();
+
+      if ((p_i - p_j)*n_j > -r_i) {
+        rowind.push_back(j);
+      }
+    }
+    
+    colptr.push_back(rowind.size());
   }
+
+  A = arma::sp_umat(
+    arma::uvec(rowind),
+    arma::uvec(colptr),
+    arma::uvec(rowind.size(), arma::fill::ones),
+    num_faces,
+    num_faces);
+#endif
 }
 
 void
 illum_context::impl::prune_A(arma::sp_umat const & A, arma::sp_umat & pruned,
                              double offset)
 {
-  int nfaces = objects.size();
-  assert(nfaces == A.n_rows && nfaces == A.n_cols);
+  assert(num_faces == A.n_rows && num_faces == A.n_cols);
 
   IntersectionInfo info;
 
   std::vector<arma::uword> rowind_vec, colptr_vec;
-  colptr_vec.reserve(nfaces + 1);
+  colptr_vec.reserve(num_faces + 1);
 
   int col = 0;
   colptr_vec.push_back(col);
 
-  for (int j = 0; j < nfaces; ++j) {
+  for (int j = 0; j < num_faces; ++j) {
     auto * obj_j = objects[j];
     auto n_j = obj_j->getNormal(info);
     auto p_j = obj_j->getCentroid();
@@ -227,7 +303,7 @@ illum_context::impl::prune_A(arma::sp_umat const & A, arma::sp_umat & pruned,
       }
     };
 
-    for (int i = 0; i < nfaces; ++i) {
+    for (int i = 0; i < num_faces; ++i) {
       if (!A(i, j)) continue;
 
       // Shoot one ray from centroid to centroid:
@@ -244,7 +320,7 @@ illum_context::impl::prune_A(arma::sp_umat const & A, arma::sp_umat & pruned,
 
   arma::uvec rowind(rowind_vec), colptr(colptr_vec);
   arma::uvec values(rowind.n_elem, arma::fill::ones);
-  pruned = arma::sp_umat(rowind, colptr, values, nfaces, nfaces);
+  pruned = arma::sp_umat(rowind, colptr, values, num_faces, num_faces);
 }
 
 /**
@@ -343,7 +419,7 @@ illum_context::impl::make_horizons(
 {
   auto phis = arma::linspace(0, 2*arma::datum::pi, nphi);
 
-  horizons.set_size(nphi, objects.size());
+  horizons.set_size(nphi, num_faces);
 
   auto const compute_horizon = [&] (int i) {
     auto tri = static_cast<Tri const *>(objects[i]);
@@ -351,9 +427,9 @@ illum_context::impl::make_horizons(
   };
 
 #if USE_TBB
-  tbb::parallel_for(size_t(0), objects.size(), compute_horizon);
+  tbb::parallel_for(size_t(0), num_faces, compute_horizon);
 #else
-  for (int i = 0; i < objects.size(); ++i) {
+  for (int i = 0; i < num_faces; ++i) {
     compute_horizon(i);
   }
 #endif
@@ -377,11 +453,11 @@ illum_context::impl::compute_visibility_ratios(
 {
   using namespace arma;
 
-  assert(horizons.n_cols == objects.size());
+  assert(horizons.n_cols == num_faces);
 
   static const auto TWO_PI = 2*arma::datum::pi;
 
-  ratios.set_size(objects.size());
+  ratios.set_size(num_faces);
 
   auto nphi = horizons.n_rows;
   auto delta_phi = TWO_PI/(nphi - 1);
@@ -436,9 +512,9 @@ illum_context::impl::compute_visibility_ratios(
   };
 
 #if USE_TBB
-  tbb::parallel_for(size_t(0), objects.size(), compute_ratio);
+  tbb::parallel_for(size_t(0), num_faces, compute_ratio);
 #else
-  for (int i = 0; i < objects.size(); ++i) {
+  for (int i = 0; i < num_faces; ++i) {
     compute_ratio(i);
   }
 #endif

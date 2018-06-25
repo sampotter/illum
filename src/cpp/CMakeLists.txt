@@ -22,6 +22,7 @@ if (USE_TBB)
 endif ()
 
 add_subdirectory (armadillo)
+
 add_subdirectory (cxxopts)
 add_subdirectory (fastbvh)
 add_subdirectory (tinyobjloader)
@@ -43,7 +44,7 @@ add_executable (illum_cli)
 target_sources (illum_cli PUBLIC illum_cli.cpp)
 target_link_libraries (illum_cli PRIVATE cxxopts)
 target_link_libraries (illum_cli PRIVATE illum)
-target_compile_features (illum_cli PRIVATE cxx_std_11)
+target_compile_features (illum_cli PRIVATE cxx_std_17)
 
 if (BUILD_VTK_GUI)
   add_executable (illum_gui)

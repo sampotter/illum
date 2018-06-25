@@ -4,8 +4,11 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <string>
 #include <vector>
+
+#include <experimental/optional>
 
 #include <cxxopts.hpp>
 
@@ -75,7 +78,9 @@ int main(int argc, char * argv[])
      cxxopts::value<double>()->default_value("1e-3"))
     ("n,nphi",
      "Number of phi values (linearly spaced in [0, 2pi])",
-     cxxopts::value<int>()->default_value("361"));
+     cxxopts::value<int>()->default_value("361"))
+    ("output_file", "Output file", cxxopts::value<std::string>())
+    ("horizon_file", "Horizon file", cxxopts::value<std::string>());
 
   options.parse_positional({"task"});
 
@@ -92,6 +97,27 @@ int main(int argc, char * argv[])
   auto offset = args["offset"].as<double>();
   auto theta_eps = args["eps"].as<double>();
   auto nphi = args["nphi"].as<int>();
+
+  std::experimental::optional<std::string> output_file;
+  if (args.count("output_file") != 0) {
+    output_file = args["output_file"].as<std::string>();
+  }
+
+  std::experimental::optional<std::string> horizon_file;
+  if (args.count("horizon_file") != 0) {
+    horizon_file = args["horizon_file"].as<std::string>();
+  }
+
+  std::set<std::string> tasks = {
+    "visibility",
+    "horizons",
+    "ratios"
+  };
+
+  if (tasks.find(task) == tasks.end()) {
+    std::cout << options.help() << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
 
   illum_context context {path.c_str(), shape_index};
 
@@ -122,7 +148,7 @@ int main(int argc, char * argv[])
     write_csc_inds(V, "V.h5");
     std::cout << " [" << toc() << "s]" << std::endl;
 
-  } else if (task == "horizon") {
+  } else if (task == "horizons") {
 
     std::cout << "- building horizon map";
     tic();
@@ -130,19 +156,38 @@ int main(int argc, char * argv[])
     context.make_horizons(horizons, nphi, theta_eps, offset);
     std::cout << " [" << toc() << "s]" << std::endl;
 
-    horizons.save(arma::hdf5_name("horizons.h5", "horizons"));
+    if (!output_file) {
+      *output_file = "horizons.h5";
+    }
+    std::cout << "- saving horizon map to " << *output_file;
+    tic();
+    horizons.save(arma::hdf5_name(*output_file, "horizons"));
+    std::cout << " [" << toc() << "s]" << std::endl;
 
   } else if (task == "ratios") {
 
-    std::cout << "- building horizon map";
-    tic();
-
     arma::mat horizons;
-    context.make_horizons(horizons, nphi, theta_eps, offset);
 
-    std::cout << " [" << toc() << "s]" << std::endl;
+    if (horizon_file) {
+      std::cout << "- loading horizon map from " << *horizon_file;
+      std::cout << std::flush;
+      tic();
+
+      horizons.load(arma::hdf5_name(*horizon_file, "horizons"));
+
+      std::cout << " [" << toc() << "s]" << std::endl;
+    } else {
+      std::cout << "- building horizon map";
+      std::cout << std::flush;
+      tic();
+
+      context.make_horizons(horizons, nphi, theta_eps, offset);
+
+      std::cout << " [" << toc() << "s]" << std::endl;
+    }
 
     std::cout << "- computing ratios";
+    std::cout << std::flush;
     tic();
 
     auto d_sun = 227390024000.; // m
