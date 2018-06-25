@@ -5,9 +5,6 @@
    CLOCK: [2018-06-13 Wed 11:59]--[2018-06-13 Wed 12:02] =>  0:03
    :END:
 ** TODO Extending phobos_test
-   :LOGBOOK:
-   CLOCK: [2018-06-15 Fri 14:17]
-   :END:
    - [ ] add CLI
 	 - [ ] position for horizon/visibility
 	 - [ ] parameter for offset
@@ -43,11 +40,26 @@
 ** TODO Recreate Ingersoll results
 ** TODO Derive recurrence for illumination
 * Implementation
+** DONE Replace "objects.size()" use with a "num_faces" variable
+** DONE Get Armadillo HDF5 working again
+   :LOGBOOK:
+   CLOCK: [2018-06-25 Mon 09:45]--[2018-06-25 Mon 10:04] =>  0:19
+   :END:
+** DONE Optimize "make_A" (build from rowind/colptr vectors)
+   :LOGBOOK:
+   CLOCK: [2018-06-22 Fri 12:43]--[2018-06-22 Fri 14:21] =>  1:38
+   CLOCK: [2018-06-22 Fri 11:27]--[2018-06-22 Fri 12:34] =>  1:07
+   :END:
 ** TODO Get fastbvh to use fixed armadillo vectors
+   :LOGBOOK:
+   CLOCK: [2018-06-22 Fri 11:11]--[2018-06-22 Fri 11:27] =>  0:16
+   :END:
 ** TODO Use fixed armadillo vectors wherever possible
 ** TODO Enable OpenMP
 ** TODO GPU matrix multiplication
 ** TODO MPI horizons
+** TODO Store triangles contiguously in memory (i.e. templatize fastbvh)
 ** TODO Parallelize visibility
-   - [ ] TBB
-   - [ ] OpenMP
+   :LOGBOOK:
+   CLOCK: [2018-06-22 Fri 15:11]--[2018-06-22 Fri 16:39] =>  1:28
+   :END:
