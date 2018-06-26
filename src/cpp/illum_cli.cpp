@@ -88,7 +88,9 @@ int main(int argc, char * argv[])
      "Number of phi values (linearly spaced in [0, 2pi])",
      cxxopts::value<int>()->default_value("361"))
     ("output_file", "Output file", cxxopts::value<std::string>())
-    ("horizon_file", "Horizon file", cxxopts::value<std::string>());
+    ("horizon_file", "Horizon file", cxxopts::value<std::string>())
+    ("sun_pos_file", "File containing sun positions",
+     cxxopts::value<std::string>());
 
   options.parse_positional({"task"});
 
@@ -114,6 +116,11 @@ int main(int argc, char * argv[])
   std::experimental::optional<std::string> horizon_file;
   if (args.count("horizon_file") != 0) {
     horizon_file = args["horizon_file"].as<std::string>();
+  }
+
+  std::experimental::optional<std::string> sun_pos_file;
+  if (args.count("sun_pos_file") != 0) {
+    sun_pos_file = args["sun_pos_file"].as<std::string>();
   }
 
   std::set<std::string> tasks = {
@@ -183,22 +190,42 @@ int main(int argc, char * argv[])
         });
     }
 
-    timed("- computing ratios", [&] () {
+    auto r_sun = 1391400000./2.; // m
+
+    arma::mat sun_positions;
+
+    if (sun_pos_file) {
+      timed("- loading sun positions", [&] () {
+        sun_positions.load(*sun_pos_file, arma::raw_ascii);
+        sun_positions = sun_positions.t();
+      });
+    } else {
       auto d_sun = 227390024000.; // m
-      auto r_sun = 1391400000./2.; // m
-      auto sun_position = r_sun*normalise(arma::randn<arma::vec>(3));
+      sun_positions.resize(3, 1);
+      sun_positions.col(0) = d_sun*normalise(arma::randn<arma::vec>(3));
+    }
 
-      arma::mat disk_xy;
-      fib_spiral(disk_xy, 100);
+    arma::mat disk_xy;
+    fib_spiral(disk_xy, 100);
 
-      arma::vec ratios;
-      context.compute_visibility_ratios(
-        horizons,
-        sun_position,
-        disk_xy,
-        ratios,
-        r_sun);
-    });
+    arma::mat ratios(horizons.n_cols, sun_positions.n_cols);
+    arma::vec tmp_ratio(horizons.n_cols);
 
+    for (int j = 0; j < sun_positions.n_cols; ++j) {
+      auto sun_pos = sun_positions.col(j);
+
+      timed("- computing ratios", [&] () {
+        context.compute_visibility_ratios(
+          horizons,
+          sun_pos,
+          disk_xy,
+          tmp_ratio,
+          r_sun);
+      });
+
+      ratios.col(j) = tmp_ratio;
+    }
+
+    ratios.save(arma::hdf5_name("ratios.h5", "ratios"));
   }
 }
