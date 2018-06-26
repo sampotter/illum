@@ -147,8 +147,8 @@ int main(int argc, char * argv[])
     timed("- computing V", [&] () { compute_V(A_after, V); });
 
     timed("- writing HDF5 files", [&] () {
-      write_csc_inds(A_before, "A_before.h5");
-      write_csc_inds(A_after, "A_after.h5");
+      // write_csc_inds(A_before, "A_before.h5");
+      // write_csc_inds(A_after, "A_after.h5");
       write_csc_inds(V, "V.h5");
     });
 
