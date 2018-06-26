@@ -57,9 +57,10 @@
 ** TODO Use fixed armadillo vectors wherever possible
 ** TODO Enable OpenMP
 ** TODO GPU matrix multiplication
-** TODO MPI horizons
 ** TODO Store triangles contiguously in memory (i.e. templatize fastbvh)
 ** TODO Parallelize visibility
    :LOGBOOK:
    CLOCK: [2018-06-22 Fri 15:11]--[2018-06-22 Fri 16:39] =>  1:28
    :END:
+** TODO Implement scattering recurrence
+** TODO Get software/reference for thermal model
