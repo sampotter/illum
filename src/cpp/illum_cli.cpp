@@ -138,17 +138,13 @@ int main(int argc, char * argv[])
 
   if (task == "visibility") {
 
-    arma::sp_umat A_before, A_after, V;
+    arma::sp_umat A, V;
 
-    timed("- assembling A", [&] () { context.make_A(A_before); });
+    timed("- assembling A", [&] () { context.make_A(A, offset); });
 
-    timed("- pruning A", [&] () { context.prune_A(A_before, A_after, offset); });
-
-    timed("- computing V", [&] () { compute_V(A_after, V); });
+    timed("- computing V", [&] () { compute_V(A, V); });
 
     timed("- writing HDF5 files", [&] () {
-      // write_csc_inds(A_before, "A_before.h5");
-      // write_csc_inds(A_after, "A_after.h5");
       write_csc_inds(V, "V.h5");
     });
 

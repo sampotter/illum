@@ -95,7 +95,7 @@ struct illum_context::impl
     num_faces {objects.size()}
   {}
 
-  void make_A(arma::sp_umat & A);
+  void make_A(arma::sp_umat & A, double offset);
   void prune_A(arma::sp_umat const & A, arma::sp_umat & pruned, double offset = 1e-5);
   void make_horizons(arma::mat & horizons, int nphi = 361, double theta_eps = 1e-3,
                      double offset = 1e-5);
@@ -118,18 +118,9 @@ illum_context::illum_context(char const * path, int shape_index):
 illum_context::~illum_context() = default;
 
 void
-illum_context::make_A(arma::sp_umat & A)
+illum_context::make_A(arma::sp_umat & A, double offset)
 {
-  pimpl->make_A(A);
-}
-
-void
-illum_context::prune_A(
-  arma::sp_umat const & A,
-  arma::sp_umat & pruned,
-  double offset)
-{
-  pimpl->prune_A(A, pruned, offset);
+  pimpl->make_A(A, offset);
 }
 
 void
@@ -184,7 +175,7 @@ struct join_horiz_reducer
 // TODO: this is going to be really inefficient---build from
 // std::vectors instead
 void
-illum_context::impl::make_A(arma::sp_umat & A)
+illum_context::impl::make_A(arma::sp_umat & A, double offset)
 {
   IntersectionInfo unused;
 
@@ -192,23 +183,45 @@ illum_context::impl::make_A(arma::sp_umat & A)
 
   std::vector<sp_inds<arma::uword>> cols(num_faces);
 
-  auto const build_col = [&] (size_t j) {
+  auto const build_col = [this, offset, &cols] (size_t j) {
+    IntersectionInfo info;
+
     auto tri_j = static_cast<Tri const *>(objects[j]);
     auto p_j = tri_j->getCentroid();
-    auto n_j = tri_j->getNormal(unused);
+    auto n_j = tri_j->getNormal(info);
+    auto q_j = p_j + offset*n_j; // offset centroid = ray origin
+
+    auto & col = cols[j];
+    auto & rowind = col.rowind;
+    auto & colptr = col.colptr;
 
     for (int i = 0; i < num_faces; ++i) {
       auto tri_i = static_cast<Tri const *>(objects[i]);
       auto p_i = tri_i->getCentroid();
       auto r_i = tri_i->getBoundingRadius();
 
-      if ((p_i - p_j)*n_j > -r_i) {
-        cols[j].rowind.push_back(i);
+      // Check if triangles are approximately "facing" each other
+      if ((p_i - p_j)*n_j <= -r_i) {
+        continue;
+      }
+
+      // Shoot a ray between the faces if they are (something *must*
+      // be hit)
+      assert(bvh.getIntersection(Ray(q_j, normalize(p_i - q_j)), &info, false));
+
+      // Get the index of the triangle that was hit by the ray
+      auto hit_index = static_cast<Tri const *>(info.object)->index;
+
+      // Search for the triangle that was hit and insert it (in sorted
+      // order) if it's a new visible triangle
+      auto lb = std::lower_bound(rowind.begin(), rowind.end(), hit_index);
+      if (lb == rowind.end() || *lb != tri_i->index) {
+        rowind.insert(lb, hit_index);
       }
     }
 
-    cols[j].colptr.push_back(0);
-    cols[j].colptr.push_back(cols[j].rowind.size());
+    colptr.push_back(0);
+    colptr.push_back(rowind.size());
   };
 
   tbb::parallel_for(size_t(0), num_faces, build_col);
@@ -220,6 +233,8 @@ illum_context::impl::make_A(arma::sp_umat & A)
     reducer);
 
   auto & inds = reducer.inds;
+
+  std::cout << inds.rowind.size() << ", " << inds.colptr.size() << std::endl;
 
   assert(inds.colptr.size() == num_faces + 1);
 
@@ -241,79 +256,45 @@ illum_context::impl::make_A(arma::sp_umat & A)
     auto tri_j = static_cast<Tri const *>(objects[j]);
     auto p_j = tri_j->getCentroid();
     auto n_j = tri_j->getNormal(unused);
-
+    auto q_j = p_j + offset*n_j; // offset centroid = ray origin
+    
     for (int i = 0; i < num_faces; ++i) {
       auto tri_i = static_cast<Tri const *>(objects[i]);
       auto p_i = tri_i->getCentroid();
       auto r_i = tri_i->getBoundingRadius();
 
-      if ((p_i - p_j)*n_j > -r_i) {
-        rowind.push_back(i);
+      // Check if triangles are approximately "facing" each other
+      if ((p_i - p_j)*n_j <= -r_i) {
+        continue;
+      }
+
+      // Shoot a ray between the faces if they are (something *must*
+      // be hit)
+      IntersectionInfo info;
+      assert(bvh.getIntersection(Ray(q_j, normalize(p_i - q_j)), &info, false));
+
+      // Get the index of the triangle that was hit by the ray
+      auto hit_index = static_cast<Tri const *>(info.object)->index;
+
+      // Search for the triangle that was hit and insert it (in sorted
+      // order) if it's a new visible triangle
+      auto lb = std::lower_bound(rowind.begin(), rowind.end(), hit_index);
+      if (lb == rowind.end() || *lb != tri_i->index) {
+        rowind.insert(lb, hit_index);
       }
     }
-    
+
     colptr.push_back(rowind.size());
   }
 
-  A = arma::sp_umat(
+  A = arma::sp_umat {
     arma::uvec(rowind),
     arma::uvec(colptr),
     arma::uvec(rowind.size(), arma::fill::ones),
     num_faces,
-    num_faces);
+    num_faces
+  };
 #endif
-}
-
-void
-illum_context::impl::prune_A(arma::sp_umat const & A, arma::sp_umat & pruned,
-                             double offset)
-{
-  assert(num_faces == A.n_rows && num_faces == A.n_cols);
-
-  IntersectionInfo info;
-
-  std::vector<arma::uword> rowind_vec, colptr_vec;
-  colptr_vec.reserve(num_faces + 1);
-
-  int col = 0;
-  colptr_vec.push_back(col);
-
-  for (int j = 0; j < num_faces; ++j) {
-    auto * obj_j = objects[j];
-    auto n_j = obj_j->getNormal(info);
-    auto p_j = obj_j->getCentroid();
-    p_j = p_j + offset*n_j; // perturb to avoid self-intersection
-
-    std::vector<arma::uword> hits;
-
-    auto cast_ray_and_insert_hit = [&] (Vector3 const & normal) {
-      if (bvh.getIntersection(Ray(p_j, normal), &info, false)) {
-        auto index = static_cast<Tri const *>(info.object)->index;
-        auto lb = std::lower_bound(hits.begin(), hits.end(), index);
-        if (lb == hits.end() || *lb != index) {
-          hits.insert(lb, index);
-        }
-      }
-    };
-
-    for (int i = 0; i < num_faces; ++i) {
-      if (!A(i, j)) continue;
-
-      // Shoot one ray from centroid to centroid:
-      auto p_i = objects[i]->getCentroid();
-      cast_ray_and_insert_hit(normalize(p_i - p_j));
-    }
-
-    // std::cout << hits.size() << "/" << A.col(i).n_nonzero << std::endl;
-    col += hits.size();
-    colptr_vec.push_back(col);
-
-    rowind_vec.insert(rowind_vec.end(), hits.begin(), hits.end());
-  }
-
-  arma::uvec rowind(rowind_vec), colptr(colptr_vec);
-  arma::uvec values(rowind.n_elem, arma::fill::ones);
-  pruned = arma::sp_umat(rowind, colptr, values, num_faces, num_faces);
 }
 
 /**
