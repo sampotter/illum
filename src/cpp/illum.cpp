@@ -1,6 +1,9 @@
 #include "illum.hpp"
 
+#include <cassert>
 #include <config.hpp>
+
+#include "sp_inds.hpp"
 
 #include <fastbvh>
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -156,40 +159,25 @@ illum_context::compute_visibility_ratios(
 }
 
 #if USE_TBB
-template <class matrix>
 struct join_horiz_reducer
 {
-  join_horiz_reducer(matrix * blocks):
-    blocks {blocks}
-  {
-    puts("A");
-  }
+  sp_inds<arma::uword> inds;
 
-  join_horiz_reducer(join_horiz_reducer<matrix> & other, tbb::split):
-    blocks {other.blocks},
-    blocked {other.blocked}
-  {
-    puts("B");
-  }
+  join_horiz_reducer() {}
+  join_horiz_reducer(join_horiz_reducer & other, tbb::split) {}
 
-  void operator()(tbb::blocked_range<size_t> const & range) {
-    puts("C");
-    for (size_t i = range.begin(); i != range.end(); ++i) {
-      // TODO: would be good to do this without copying, but there's
-      // no insert_cols member function for the sparse
-      // matrices---write one and contribute?
-      blocked = arma::join_horiz(blocked, blocks[i]);
+  using blocked_range_type = tbb::blocked_range<
+    typename std::vector<sp_inds<arma::uword>>::iterator>;
+
+  void operator()(blocked_range_type const & r) {
+    for (auto it = r.begin(); it != r.end(); ++it) {
+      inds.append(*it);
     }
-    std::cout << blocked.n_rows << " x " << blocked.n_cols << std::endl;
   }
 
   void join(join_horiz_reducer const & other) {
-    puts("D");
-    blocked = arma::join_horiz(blocked, other.blocked);
+    inds.append(other.inds);
   }
-
-  matrix * blocks;
-  matrix blocked;
 };
 #endif
 
@@ -202,11 +190,9 @@ illum_context::impl::make_A(arma::sp_umat & A)
 
 #if USE_TBB
 
-  std::vector<arma::sp_umat> cols(num_faces);
+  std::vector<sp_inds<arma::uword>> cols(num_faces);
 
   auto const build_col = [&] (size_t j) {
-    std::vector<arma::uword> rowind;
-
     auto tri_j = static_cast<Tri const *>(objects[j]);
     auto p_j = tri_j->getCentroid();
     auto n_j = tri_j->getNormal(unused);
@@ -217,27 +203,34 @@ illum_context::impl::make_A(arma::sp_umat & A)
       auto r_i = tri_i->getBoundingRadius();
 
       if ((p_i - p_j)*n_j > -r_i) {
-        rowind.push_back(j);
+        cols[j].rowind.push_back(i);
       }
     }
 
-    cols[j] = arma::sp_umat {
-      arma::uvec(rowind),                          // rowind
-      arma::uvec({0, num_faces}),                  // colptr
-      arma::uvec(rowind.size(), arma::fill::ones), // values
-      num_faces,                                   // n_rows
-      1                                            // n_cols
-    };
+    cols[j].colptr.push_back(0);
+    cols[j].colptr.push_back(cols[j].rowind.size());
   };
 
   tbb::parallel_for(size_t(0), num_faces, build_col);
 
-  auto reducer = join_horiz_reducer<arma::sp_umat> {&cols[0]};
-  puts("E");
-  tbb::parallel_reduce(tbb::blocked_range<size_t>(0, num_faces), reducer);
+  join_horiz_reducer reducer;
 
-  A = reducer.blocked;
-  
+  tbb::parallel_reduce(
+    join_horiz_reducer::blocked_range_type {cols.begin(), cols.end()},
+    reducer);
+
+  auto & inds = reducer.inds;
+
+  assert(inds.colptr.size() == num_faces + 1);
+
+  A = arma::sp_umat {
+    arma::uvec(inds.rowind),
+    arma::uvec(inds.colptr),
+    arma::uvec(inds.rowind.size(), arma::fill::ones),
+    num_faces,
+    num_faces
+  };
+
 #else
 
   std::vector<arma::uword> rowind, colptr;
@@ -255,7 +248,7 @@ illum_context::impl::make_A(arma::sp_umat & A)
       auto r_i = tri_i->getBoundingRadius();
 
       if ((p_i - p_j)*n_j > -r_i) {
-        rowind.push_back(j);
+        rowind.push_back(i);
       }
     }
     
