@@ -254,11 +254,100 @@ bool exists_and_is_file(std::string const & filename) {
   return boost::filesystem::exists(p) && boost::filesystem::is_regular_file(p);
 }
 
+struct job_params {
+  double offset, theta_eps;
+  int nphi;
+  opt_t<std::string> output_file, horizon_file, sun_pos_file;
+};
+
+void do_visibility_task(job_params & params, illum_context & context) {
+  arma::sp_umat A, V;
+  timed("- assembling A", [&] () { context.make_A(A, params.offset); });
+  timed("- computing V", [&] () { compute_V(A, V); });
+  timed("- writing HDF5 files", [&] () {
+    write_csc_inds(V, "V.h5");
+  });
+}
+
+void do_horizons_task(job_params & params, illum_context & context) {
+  arma::mat horizons;
+  timed("- building horizon map", [&] () {
+    context.make_horizons(horizons, params.nphi, params.theta_eps, params.offset);
+  });
+  if (!params.output_file) {
+    *params.output_file = "horizons.h5";
+  }
+  timed("- saving horizon map to " + *params.output_file, [&] () {
+    horizons.save(arma::hdf5_name(*params.output_file, "horizons"));
+  });
+}
+
+void do_ratios_task(job_params & params, illum_context & context) {
+  /*
+   * Load or create a matrix containing the horizons.
+   */
+  arma::mat horizons;
+  opt_t<int> j0, j1, nhoriz;
+  if (params.horizon_file) {
+    if (!exists_and_is_file(*params.horizon_file)) {
+      std::cerr << "- horizon file " + *params.horizon_file + "doesn't exist"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    timed(
+      "- loading horizon map from " + *params.horizon_file,
+      [&] () {
+        load_mat(*params.horizon_file, "horizons", horizons, j0, j1, nhoriz);
+      });
+  } else {
+    timed(
+      "- building horizon map",
+      [&] () {
+        context.make_horizons(
+          horizons, params.nphi, params.theta_eps, params.offset);
+      });
+  }
+
+  arma::mat sun_positions;
+  if (params.sun_pos_file) {
+    timed("- loading sun positions", [&] () {
+      sun_positions.load(*params.sun_pos_file, arma::raw_ascii);
+      sun_positions = sun_positions.t();
+    });
+  } else {
+    // A little test problem using made-up numbers
+    auto d_sun = 227390024000.; // m
+    sun_positions.resize(3, 1);
+    sun_positions.col(0) = d_sun*normalise(arma::randn<arma::vec>(3));
+  }
+
+  arma::mat disk_xy;
+  fib_spiral(disk_xy, 100);
+
+  int nsunpos = sun_positions.n_cols;
+
+  arma::mat ratios(horizons.n_cols, nsunpos);
+  arma::vec tmp(horizons.n_cols);
+
+  for (int j = 0; j < nsunpos; ++j) {
+    auto sun_pos = sun_positions.col(j);
+
+    timed("- computing ratios", [&] () {
+      context.compute_visibility_ratios(
+        horizons, sun_pos, disk_xy, tmp, constants::SUN_RADIUS, j0, j1);
+    });
+
+    ratios.col(j) = tmp;
+  }
+
+  timed("- writing ratios to ratios.h5", [&] () {
+    save_mat("ratios.h5", "ratios", ratios, nhoriz, nsunpos, j0);
+  });
+}
+
 int main(int argc, char * argv[])
 {
-
   cxxopts::Options options("phobos_test", "Work in progress...");
-
   options.add_options()
     ("h,help", "Display usage")
     ("t,task", "Task to do", cxxopts::value<std::string>())
@@ -278,44 +367,46 @@ int main(int argc, char * argv[])
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
     ("sun_pos_file", "File containing sun positions",
      cxxopts::value<std::string>());
-
   options.parse_positional({"task"});
 
   auto args = options.parse(argc, argv);
-
   if (args["help"].as<bool>() || args["task"].count() == 0) {
     std::cout << options.help() << std::endl;
     std::exit(EXIT_SUCCESS);
   }
 
+  /**
+   * Parse options related to loading the model from the OBJ file.
+   */
   auto task = args["task"].as<std::string>();
   auto path = args["path"].as<std::string>();
   auto shape_index = args["shape"].as<int>();
-  auto offset = args["offset"].as<double>();
-  auto theta_eps = args["eps"].as<double>();
-  auto nphi = args["nphi"].as<int>();
 
-  opt_t<std::string> output_file;
+  /**
+   * Parse options which are job parameters.
+   */
+  job_params params;
+  params.offset = args["offset"].as<double>();
+  params.theta_eps = args["eps"].as<double>();
+  params.nphi = args["nphi"].as<int>();
   if (args.count("output_file") != 0) {
-    output_file = args["output_file"].as<std::string>();
+    params.output_file = args["output_file"].as<std::string>();
   }
-
-  opt_t<std::string> horizon_file;
   if (args.count("horizon_file") != 0) {
-    horizon_file = args["horizon_file"].as<std::string>();
+    params.horizon_file = args["horizon_file"].as<std::string>();
   }
-
-  opt_t<std::string> sun_pos_file;
   if (args.count("sun_pos_file") != 0) {
-    sun_pos_file = args["sun_pos_file"].as<std::string>();
+    params.sun_pos_file = args["sun_pos_file"].as<std::string>();
   }
 
+  /**
+   * Check that the task that the user request is valid.
+   */
   std::set<std::string> tasks = {
     "visibility",
     "horizons",
     "ratios"
   };
-
   if (tasks.find(task) == tasks.end()) {
     std::cout << options.help() << std::endl;
     std::exit(EXIT_FAILURE);
@@ -329,98 +420,9 @@ int main(int argc, char * argv[])
 
   illum_context context {path.c_str(), shape_index};
 
-  if (task == "visibility") {
-
-    arma::sp_umat A, V;
-
-    timed("- assembling A", [&] () { context.make_A(A, offset); });
-
-    timed("- computing V", [&] () { compute_V(A, V); });
-
-    timed("- writing HDF5 files", [&] () {
-      write_csc_inds(V, "V.h5");
-    });
-
-  } else if (task == "horizons") {
-
-    arma::mat horizons;
-
-    timed(
-      "- building horizon map",
-      [&] () {
-        context.make_horizons(horizons, nphi, theta_eps, offset);
-      });
-
-    if (!output_file) {
-      *output_file = "horizons.h5";
-    }
-
-    timed(
-      "- saving horizon map to " + *output_file,
-      [&] () {
-        horizons.save(arma::hdf5_name(*output_file, "horizons"));
-      });
-
-  } else if (task == "ratios") {
-
-    /*
-     * Load or create a matrix containing the horizons.
-     */ 
-    arma::mat horizons;
-    opt_t<int> j0, j1, nhoriz;
-    if (horizon_file) {
-      if (!exists_and_is_file(*horizon_file)) {
-        std::cerr << "- horizon file " + *horizon_file + "doesn't exist"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      timed(
-        "- loading horizon map from " + *horizon_file,
-        [&] () {
-          load_mat(*horizon_file, "horizons", horizons, j0, j1, nhoriz);
-        });
-    } else {
-      timed(
-        "- building horizon map",
-        [&] () { context.make_horizons(horizons, nphi, theta_eps, offset); });
-    }
-
-    arma::mat sun_positions;
-    if (sun_pos_file) {
-      timed("- loading sun positions", [&] () {
-        sun_positions.load(*sun_pos_file, arma::raw_ascii);
-        sun_positions = sun_positions.t();
-      });
-    } else {
-      // A little test problem using made-up numbers
-      auto d_sun = 227390024000.; // m
-      sun_positions.resize(3, 1);
-      sun_positions.col(0) = d_sun*normalise(arma::randn<arma::vec>(3));
-    }
-
-    arma::mat disk_xy;
-    fib_spiral(disk_xy, 100);
-
-    int nsunpos = sun_positions.n_cols;
-
-    arma::mat ratios(horizons.n_cols, nsunpos);
-    arma::vec tmp(horizons.n_cols);
-
-    for (int j = 0; j < nsunpos; ++j) {
-      auto sun_pos = sun_positions.col(j);
-
-      timed("- computing ratios", [&] () {
-        context.compute_visibility_ratios(
-          horizons, sun_pos, disk_xy, tmp, constants::SUN_RADIUS, j0, j1);
-      });
-
-      ratios.col(j) = tmp;
-    }
-
-    timed("- writing ratios to ratios.h5", [&] () {
-      save_mat("ratios.h5", "ratios", ratios, nhoriz, nsunpos, j0);
-    });
-  }
+  if (task == "visibility") do_visibility_task(params, context);
+  else if (task == "horizons") do_horizons_task(params, context);
+  else if (task == "ratios") do_ratios_task(params, context);
 
 #if USE_MPI
   MPI_Finalize();
