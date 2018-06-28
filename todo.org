@@ -1,4 +1,18 @@
 * General
+** DONE Read Boost MPI tutorial
+   :LOGBOOK:
+   CLOCK: [2018-06-27 Wed 11:01]--[2018-06-27 Wed 11:23] =>  0:22
+   :END:
+** DONE Learn how to use HDF5 C++ bindings
+   - Note: parallel HDF5 and HDF5 C++ can't be enabled at the same
+     time
+   :LOGBOOK:
+   CLOCK: [2018-06-27 Wed 11:24]--[2018-06-27 Wed 11:55] =>  0:31
+   :END:
+** TODO Learn how to use parallel HDF5 (read [[https://support.hdfgroup.org/HDF5/Tutor/parallel.html][tutorial]])
+   :LOGBOOK:
+   CLOCK: [2018-06-27 Wed 12:46]
+   :END:
 ** DONE Fix fastbvh
    :LOGBOOK:
    CLOCK: [2018-06-13 Wed 12:25]--[2018-06-13 Wed 12:35] =>  0:10
@@ -40,6 +54,7 @@
 ** TODO Recreate Ingersoll results
 ** TODO Derive recurrence for illumination
 * Implementation
+** TODO Boost serialize fastbvh
 ** DONE Replace "objects.size()" use with a "num_faces" variable
 ** DONE Get Armadillo HDF5 working again
    :LOGBOOK:
@@ -64,3 +79,6 @@
    :END:
 ** TODO Implement scattering recurrence
 ** TODO Get software/reference for thermal model
+* Cluster
+** TODO elemental grid
+** TODO boost MPI
