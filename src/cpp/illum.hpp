@@ -2,6 +2,7 @@
 #define __ILLUM_HPP__
 
 #include <armadillo>
+#include <experimental/optional>
 #include <memory>
 
 struct illum_context {
@@ -15,7 +16,9 @@ struct illum_context {
                                  arma::vec const & sun_position,
                                  arma::mat const & disk_xy,
                                  arma::vec & ratios,
-                                 double sun_radius);
+                                 double sun_radius,
+                                 std::experimental::optional<int> const & j0,
+                                 std::experimental::optional<int> const & j1);
   
 private:
   struct impl;

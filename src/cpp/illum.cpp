@@ -1,9 +1,15 @@
 #include "illum.hpp"
 
 #include <cassert>
+
 #include <config.hpp>
 
 #include "sp_inds.hpp"
+
+#include <boost/mpi/environment.hpp>
+#include <boost/mpi/communicator.hpp>
+
+namespace mpi = boost::mpi;
 
 #include <fastbvh>
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -103,7 +109,9 @@ struct illum_context::impl
                                  arma::vec const & sun_position,
                                  arma::mat const & disk_xy,
                                  arma::vec & ratios,
-                                 double sun_radius);
+                                 double sun_radius,
+                                 std::experimental::optional<int> const & j0,
+                                 std::experimental::optional<int> const & j1);
 
   std::vector<Object *> objects;
   std::vector<Object *> bvh_objects;
@@ -139,14 +147,18 @@ illum_context::compute_visibility_ratios(
   arma::vec const & sun_position,
   arma::mat const & disk_xy,
   arma::vec & ratios,
-  double sun_radius)
+  double sun_radius,
+  std::experimental::optional<int> const & j0,
+  std::experimental::optional<int> const & j1)
 {
   pimpl->compute_visibility_ratios(
     horizons,
     sun_position,
     disk_xy,
     ratios,
-    sun_radius);
+    sun_radius,
+    j0,
+    j1);
 }
 
 #if USE_TBB
@@ -423,21 +435,25 @@ illum_context::impl::compute_visibility_ratios(
   arma::vec const & sun_position,
   arma::mat const & disk_XY,
   arma::vec & ratios,
-  double sun_radius)
+  double sun_radius,
+  std::experimental::optional<int> const & j0,
+  std::experimental::optional<int> const & j1)
 {
   using namespace arma;
 
-  assert(horizons.n_cols == num_faces);
-
   static const auto TWO_PI = 2*arma::datum::pi;
 
-  ratios.set_size(num_faces);
+  int nhoriz = *j1 - *j0;
+  assert(horizons.n_cols == nhoriz);
+  ratios.set_size(nhoriz);
 
   auto nphi = horizons.n_rows;
   auto delta_phi = TWO_PI/(nphi - 1);
 
-  auto const compute_ratio = [&] (int i) {
-    auto obj = objects[i];
+  auto const compute_ratio = [&] (int obj_ind) {
+    auto obj = objects[obj_ind];
+
+    int ratio_ind = obj_ind - *j0;
 
     vec::fixed<3> p;
     {
@@ -460,7 +476,7 @@ illum_context::impl::compute_visibility_ratios(
 
     auto btn = get_frenet_frame(static_cast<Tri const *>(obj));
 
-    arma::vec horizon = horizons.col(i);
+    arma::vec horizon = horizons.col(ratio_ind);
 
     int count = 0;
 
@@ -482,14 +498,14 @@ illum_context::impl::compute_visibility_ratios(
       }
     }
 
-    ratios(i) = count/(nphi - 1);
+    ratios(ratio_ind) = count/(nphi - 1);
   };
 
 #if USE_TBB
-  tbb::parallel_for(size_t(0), num_faces, compute_ratio);
+  tbb::parallel_for(size_t(*j0), size_t(*j1), compute_ratio);
 #else
-  for (int i = 0; i < num_faces; ++i) {
-    compute_ratio(i);
+  for (int j = *j0; j < *j1; ++j) {
+    compute_ratio(j);
   }
 #endif
 }
