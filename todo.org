@@ -1,3 +1,30 @@
+* TODO Reminders
+  - check to see if ratios are already effectively being parallelized
+    by MPI when horizons are loaded from file
+  - MPI parallelize horizon creation
+
+*for shape0_dec5000*
+
+TBB=OFF MPI=OFF
+- loading horizon map from horizons.h5 [0.011503s]
+- computing ratios *[0.06181s]*
+- writing ratios to ratios.h5 [0.012513s]
+
+TBB=ON MPI=OFF
+- loading horizon map from horizons.h5 [0.009882s]
+- computing ratios *[0.035482s]*
+- writing ratios to ratios.h5 [0.01046s]
+
+TBB=OFF MPI=ON
+- loading horizon map from horizons.h5 [0.024096s]
+- loading horizon map from horizons.h5 [0.024084s]
+- computing ratios [0.053959s]
+- computing ratios [0.051008s]
+- writing ratios to ratios.h5 [0.005683s]
+- writing ratios to ratios.h5 [0.002581s]
+
+
+
 * General
 ** DONE Read Boost MPI tutorial
    :LOGBOOK:
@@ -9,21 +36,14 @@
    :LOGBOOK:
    CLOCK: [2018-06-27 Wed 11:24]--[2018-06-27 Wed 11:55] =>  0:31
    :END:
-** TODO Learn how to use parallel HDF5 (read [[https://support.hdfgroup.org/HDF5/Tutor/parallel.html][tutorial]])
-   :LOGBOOK:
-   CLOCK: [2018-06-27 Wed 12:46]
-   :END:
+** DONE Learn how to use parallel HDF5 (read [[https://support.hdfgroup.org/HDF5/Tutor/parallel.html][tutorial]])
 ** DONE Fix fastbvh
    :LOGBOOK:
    CLOCK: [2018-06-13 Wed 12:25]--[2018-06-13 Wed 12:35] =>  0:10
    CLOCK: [2018-06-13 Wed 11:59]--[2018-06-13 Wed 12:02] =>  0:03
    :END:
-** TODO Extending phobos_test
-   - [ ] add CLI
-	 - [ ] position for horizon/visibility
-	 - [ ] parameter for offset
 * Visibility
-** TODO Add height offset to visibility and horizion matrix creation
+** DONE Add height offset to visibility and horizion matrix creation
 ** DONE Prune visibility matrix by shooting rays
 ** DONE Fix C++ visibility matrix
 
@@ -54,7 +74,6 @@
 ** TODO Recreate Ingersoll results
 ** TODO Derive recurrence for illumination
 * Implementation
-** TODO Boost serialize fastbvh
 ** DONE Replace "objects.size()" use with a "num_faces" variable
 ** DONE Get Armadillo HDF5 working again
    :LOGBOOK:
@@ -73,12 +92,16 @@
 ** TODO Enable OpenMP
 ** TODO GPU matrix multiplication
 ** TODO Store triangles contiguously in memory (i.e. templatize fastbvh)
-** TODO Parallelize visibility
+** TODO [#A] Parallelize visibility
+   - [ ] Fix bug in make_A related to Intel TBB usage
    :LOGBOOK:
    CLOCK: [2018-06-22 Fri 15:11]--[2018-06-22 Fri 16:39] =>  1:28
    :END:
 ** TODO Implement scattering recurrence
-** TODO Get software/reference for thermal model
-* Cluster
-** TODO elemental grid
-** TODO boost MPI
+** DONE Get software/reference for thermal model
+** DONE [#A] MPI horizons
+   :LOGBOOK:
+   CLOCK: [2018-06-29 Fri 10:18]--[2018-06-29 Fri 11:46] =>  1:28
+   :END:
+** DONE [#A] MPI ratios
+** TODO Read sun points with weights
