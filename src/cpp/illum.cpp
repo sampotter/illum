@@ -6,11 +6,6 @@
 
 #include "sp_inds.hpp"
 
-#include <boost/mpi/environment.hpp>
-#include <boost/mpi/communicator.hpp>
-
-namespace mpi = boost::mpi;
-
 #include <fastbvh>
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
