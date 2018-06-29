@@ -102,16 +102,27 @@ struct illum_context::impl
   {}
 
   void make_A(arma::sp_umat & A, double offset);
-  void prune_A(arma::sp_umat const & A, arma::sp_umat & pruned, double offset = 1e-5);
-  void make_horizons(arma::mat & horizons, int nphi = 361, double theta_eps = 1e-3,
-                     double offset = 1e-5);
-  void compute_visibility_ratios(arma::mat const & horizons,
-                                 arma::vec const & sun_position,
-                                 arma::mat const & disk_xy,
-                                 arma::vec & ratios,
-                                 double sun_radius,
-                                 std::experimental::optional<int> const & j0,
-                                 std::experimental::optional<int> const & j1);
+
+  void make_horizons(
+    arma::mat & horizons,
+    int nphi = 361,
+    double theta_eps = 1e-3,
+    double offset = 1e-5,
+    opt_t<int> j0 = opt_t <int> {},
+    opt_t<int> j1 = opt_t <int> {});
+
+  void compute_visibility_ratios(
+    arma::mat const & horizons,
+    arma::vec const & sun_position,
+    arma::mat const & disk_xy,
+    arma::vec & ratios,
+    double sun_radius,
+    opt_t<int> const & j0,
+    opt_t<int> const & j1);
+
+  int get_num_faces() const {
+    return num_faces;
+  }
 
   std::vector<Object *> objects;
   std::vector<Object *> bvh_objects;
@@ -136,9 +147,11 @@ illum_context::make_horizons(
   arma::mat & horizons,
   int nphi,
   double theta_eps,
-  double offset)
+  double offset,
+  opt_t<int> j0,
+  opt_t<int> j1)
 {
-  pimpl->make_horizons(horizons, nphi, theta_eps, offset);
+  pimpl->make_horizons(horizons, nphi, theta_eps, offset, j0, j1);
 }
 
 void
@@ -148,8 +161,8 @@ illum_context::compute_visibility_ratios(
   arma::mat const & disk_xy,
   arma::vec & ratios,
   double sun_radius,
-  std::experimental::optional<int> const & j0,
-  std::experimental::optional<int> const & j1)
+  opt_t<int> j0,
+  opt_t<int> j1)
 {
   pimpl->compute_visibility_ratios(
     horizons,
@@ -159,6 +172,11 @@ illum_context::compute_visibility_ratios(
     sun_radius,
     j0,
     j1);
+}
+
+int
+illum_context::get_num_faces() const {
+  return pimpl->get_num_faces();
 }
 
 #if USE_TBB
@@ -401,22 +419,28 @@ illum_context::impl::make_horizons(
   arma::mat & horizons,
   int nphi,
   double theta_eps,
-  double offset)
+  double offset,
+  opt_t<int> j0,
+  opt_t<int> j1)
 {
   auto phis = arma::linspace(0, 2*arma::datum::pi, nphi);
 
-  horizons.set_size(nphi, num_faces);
+  int nhoriz = j1.value_or(num_faces) - j0.value_or(0);
+  horizons.set_size(nphi, nhoriz);
 
-  auto const compute_horizon = [&] (int i) {
-    auto tri = static_cast<Tri const *>(objects[i]);
-    horizons.col(i) = trace_horizon(tri, bvh, phis, theta_eps, offset);
+  auto const compute_horizon = [&] (int j) {
+    auto tri = static_cast<Tri const *>(objects[j]);
+    horizons.col(j - j0.value_or(0)) = trace_horizon(tri, bvh, phis, theta_eps, offset);
   };
 
 #if USE_TBB
-  tbb::parallel_for(size_t(0), num_faces, compute_horizon);
+  tbb::parallel_for(
+    size_t(j0.value_or(0)),
+    size_t(j1.value_or(num_faces)),
+    compute_horizon);
 #else
-  for (int i = 0; i < num_faces; ++i) {
-    compute_horizon(i);
+  for (int j = j0.value_or(0); j < j1.value_or(num_faces); ++j) {
+    compute_horizon(j);
   }
 #endif
 }
@@ -436,14 +460,14 @@ illum_context::impl::compute_visibility_ratios(
   arma::mat const & disk_XY,
   arma::vec & ratios,
   double sun_radius,
-  std::experimental::optional<int> const & j0,
-  std::experimental::optional<int> const & j1)
+  opt_t<int> const & j0,
+  opt_t<int> const & j1)
 {
   using namespace arma;
 
   static const auto TWO_PI = 2*arma::datum::pi;
 
-  int nhoriz = *j1 - *j0;
+  int nhoriz = j1.value_or(horizons.n_cols) - j0.value_or(0);
   assert(horizons.n_cols == nhoriz);
   ratios.set_size(nhoriz);
 
@@ -453,7 +477,7 @@ illum_context::impl::compute_visibility_ratios(
   auto const compute_ratio = [&] (int obj_ind) {
     auto obj = objects[obj_ind];
 
-    int ratio_ind = obj_ind - *j0;
+    int ratio_ind = obj_ind - j0.value_or(0);
 
     vec::fixed<3> p;
     {
@@ -502,9 +526,12 @@ illum_context::impl::compute_visibility_ratios(
   };
 
 #if USE_TBB
-  tbb::parallel_for(size_t(*j0), size_t(*j1), compute_ratio);
+  tbb::parallel_for(
+    size_t(j0.value_or(0)),
+    size_t(j1.value_or(horizons.n_cols)),
+    compute_ratio);
 #else
-  for (int j = *j0; j < *j1; ++j) {
+  for (int j = j0.value_or(0); j < j1.value_or(horizons.n_cols); ++j) {
     compute_ratio(j);
   }
 #endif

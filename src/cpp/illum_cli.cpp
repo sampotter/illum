@@ -80,8 +80,8 @@ par_load_mat(
   std::string const & hdf5_path,
   std::string const & dataset_name,
   arma::mat & mat,
-  opt_t<int> & j0,
-  opt_t<int> & j1,
+  opt_t<int> j0,
+  opt_t<int> j1,
   opt_t<int> & n_cols)
 {
   hid_t file, dset, plist;
@@ -107,9 +107,6 @@ par_load_mat(
   // transpose here (and elsewhere)
   n_cols = dims[0];
   // n_rows = dims[1];
-
-  j0 = (static_cast<double>(mpi_rank)/mpi_size)*dims[0];
-  j1 = (static_cast<double>(mpi_rank + 1)/mpi_size)*dims[0];
 
   int ncols = *j1 - *j0;
   int nrows = dims[1];
@@ -167,7 +164,7 @@ par_save_mat(
 {
   hid_t file, dset, plist;
   hid_t filespace, memspace;
-  hsize_t dims[2];
+  hsize_t filespace_dims[2];
   hsize_t count[2], offset[2];
   herr_t status;
 
@@ -177,15 +174,15 @@ par_save_mat(
   H5Pclose(plist);
 
   if (mat.is_vec()) {
-    dims[0] = *n_cols;
+    filespace_dims[0] = *n_cols;
   } else {
-    dims[0] = *n_cols;
-    dims[1] = *n_rows;
+    filespace_dims[0] = *n_cols;
+    filespace_dims[1] = *n_rows;
   }
 
   int rank = mat.is_vec() ? 1 : 2;
 
-  filespace = H5Screate_simple(rank, dims, nullptr);
+  filespace = H5Screate_simple(rank, filespace_dims, nullptr);
   dset = H5Dcreate(file, dataset_name.c_str(), H5T_IEEE_F64LE, filespace,
                    H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
   H5Sclose(filespace);
@@ -222,6 +219,15 @@ par_save_mat(
 }
 #endif
 
+/**
+ * hdf5_path: path to hdf5 file into which to write
+ * dataset_name: name of new dataset
+ * mat: the Armadillo matrix that will be written to `dataset_name' in
+ *      `hdf5_path'
+ * n_cols: number of columns(Arma)/rows(HDF5) in HDF5 file dataset
+ * n_rows: number of rows(Arma)/columns(HDF5) in HDF5 file dataset
+ * j0: column(Arma)/row(HDF5) offset into HDF5 file dataset---used by MPI
+ */
 void
 save_mat(
   std::string const & hdf5_path,
@@ -254,11 +260,25 @@ bool exists_and_is_file(std::string const & filename) {
   return boost::filesystem::exists(p) && boost::filesystem::is_regular_file(p);
 }
 
+void file_exists_or_die(std::string const & filename) {
+  if (!exists_and_is_file(filename)) {
+    std::cerr << "- file " << filename << "doesn't exist" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+}
+
 struct job_params {
   double offset, theta_eps;
   int nphi;
   opt_t<std::string> output_file, horizon_file, sun_pos_file;
 };
+
+#if USE_MPI
+void set_j0_and_j1(int num_faces, opt_t<int> & j0, opt_t<int> & j1) {
+  j0 = (static_cast<double>(mpi_rank)/mpi_size)*num_faces;
+  j1 = (static_cast<double>(mpi_rank + 1)/mpi_size)*num_faces;
+}
+#endif
 
 void do_visibility_task(job_params & params, illum_context & context) {
   arma::sp_umat A, V;
@@ -270,46 +290,52 @@ void do_visibility_task(job_params & params, illum_context & context) {
 }
 
 void do_horizons_task(job_params & params, illum_context & context) {
+  int nfaces = context.get_num_faces(), nphi = params.nphi;
+  opt_t<int> j0, j1;
+#if USE_MPI
+  set_j0_and_j1(nfaces, j0, j1);
+#endif
   arma::mat horizons;
   timed("- building horizon map", [&] () {
-    context.make_horizons(horizons, params.nphi, params.theta_eps, params.offset);
+    context.make_horizons(
+      horizons, params.nphi, params.theta_eps, params.offset, j0, j1);
   });
   if (!params.output_file) {
     *params.output_file = "horizons.h5";
   }
   timed("- saving horizon map to " + *params.output_file, [&] () {
     horizons.save(arma::hdf5_name(*params.output_file, "horizons"));
+    save_mat(*params.output_file, "horizons", horizons, nfaces, nphi, j0);
   });
 }
 
 void do_ratios_task(job_params & params, illum_context & context) {
+  int nfaces = context.get_num_faces();
+  opt_t<int> j0, j1, nhoriz;
+
+#if USE_MPI
+  set_j0_and_j1(nfaces, j0, j1);
+#endif
+
   /*
    * Load or create a matrix containing the horizons.
    */
   arma::mat horizons;
-  opt_t<int> j0, j1, nhoriz;
   if (params.horizon_file) {
-    if (!exists_and_is_file(*params.horizon_file)) {
-      std::cerr << "- horizon file " + *params.horizon_file + "doesn't exist"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    timed(
-      "- loading horizon map from " + *params.horizon_file,
-      [&] () {
-        load_mat(*params.horizon_file, "horizons", horizons, j0, j1, nhoriz);
-      });
+    file_exists_or_die(*params.horizon_file);
+    timed("- loading horizon map from " + *params.horizon_file, [&] () {
+      load_mat(*params.horizon_file, "horizons", horizons, j0, j1, nhoriz);
+    });
   } else {
-    timed(
-      "- building horizon map",
-      [&] () {
-        context.make_horizons(
-          horizons, params.nphi, params.theta_eps, params.offset);
-      });
+    timed("- building horizon map", [&] () {
+      context.make_horizons(
+        horizons, params.nphi, params.theta_eps, params.offset, j0, j1);
+    });
   }
 
   arma::mat sun_positions;
   if (params.sun_pos_file) {
+    file_exists_or_die(*params.sun_pos_file);
     timed("- loading sun positions", [&] () {
       sun_positions.load(*params.sun_pos_file, arma::raw_ascii);
       sun_positions = sun_positions.t();

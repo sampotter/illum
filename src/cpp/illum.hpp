@@ -5,20 +5,33 @@
 #include <experimental/optional>
 #include <memory>
 
+template <class T>
+using opt_t = std::experimental::optional<T>;
+
 struct illum_context {
   illum_context(char const * path, int shape_index = 0);
   ~illum_context();
 
   void make_A(arma::sp_umat & A, double offset = 1e-5);
-  void make_horizons(arma::mat & horizons, int nphi = 361, double theta_eps = 1e-3,
-                     double offset = 1e-5);
-  void compute_visibility_ratios(arma::mat const & horizons,
-                                 arma::vec const & sun_position,
-                                 arma::mat const & disk_xy,
-                                 arma::vec & ratios,
-                                 double sun_radius,
-                                 std::experimental::optional<int> const & j0,
-                                 std::experimental::optional<int> const & j1);
+
+  void make_horizons(
+    arma::mat & horizons,
+    int nphi = 361,
+    double theta_eps = 1e-3,
+    double offset = 1e-5,
+    opt_t<int> j0 = opt_t<int> {},
+    opt_t<int> j1 = opt_t<int> {});
+
+  void compute_visibility_ratios(
+    arma::mat const & horizons,
+    arma::vec const & sun_position,
+    arma::mat const & disk_xy,
+    arma::vec & ratios,
+    double sun_radius,
+    opt_t<int> j0,
+    opt_t<int> j1);
+
+  int get_num_faces() const;
   
 private:
   struct impl;
