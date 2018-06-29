@@ -1,4 +1,5 @@
 #define ON 1
 #define OFF 0
 
+#cmakedefine01 USE_MPI
 #cmakedefine01 USE_TBB

@@ -11,9 +11,15 @@ if (COMPILER_SUPPORTS_MARCH_NATIVE)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
 endif ()
 
+find_package (Boost 1.60 REQUIRED COMPONENTS system filesystem)
+
 if (BUILD_VTK_GUI)
   find_package (VTK REQUIRED)
   include (${VTK_USE_FILE})
+endif ()
+
+if (USE_MPI)
+  find_package (MPI REQUIRED)
 endif ()
 
 if (USE_TBB)
@@ -42,8 +48,14 @@ target_compile_features (illum PRIVATE cxx_std_14)
 
 add_executable (illum_cli)
 target_sources (illum_cli PUBLIC illum_cli.cpp)
+target_include_directories (illum_cli PRIVATE ${Boost_INCLUDE_DIR})
+target_include_directories (illum_cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries (illum_cli PRIVATE ${Boost_LIBRARIES})
 target_link_libraries (illum_cli PRIVATE cxxopts)
 target_link_libraries (illum_cli PRIVATE illum)
+if (USE_MPI)
+  target_link_libraries (illum_cli PRIVATE ${MPI_LIBRARIES})
+endif ()
 target_compile_features (illum_cli PRIVATE cxx_std_17)
 
 if (BUILD_VTK_GUI)
