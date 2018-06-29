@@ -68,6 +68,13 @@ target_link_libraries (illum PRIVATE tinyobjloader)
 target_compile_features (illum PRIVATE cxx_std_14)
 
 add_executable (illum_cli)
+if (UNIX)
+  set_property (
+	TARGET illum_cli
+	PROPERTY BUILD_RPATH
+	${Boost_LIBRARY_DIRS}
+	${HDF5_C_LIBRARY_DIRS})
+endif ()
 target_sources (illum_cli PUBLIC illum_cli.cpp)
 target_include_directories (illum_cli PRIVATE ${Boost_INCLUDE_DIR})
 target_include_directories (illum_cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
