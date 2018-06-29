@@ -1,6 +1,8 @@
 #ifndef __ILLUM_HPP__
 #define __ILLUM_HPP__
 
+#include "config.hpp"
+
 #include <armadillo>
 #include <experimental/optional>
 #include <memory>
