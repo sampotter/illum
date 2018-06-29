@@ -27,6 +27,25 @@ if (USE_TBB)
   add_subdirectory (tbb)
 endif ()
 
+# If we're building with MPI, we don't want Armadillo to find and link
+# HDF5 in its wrapper library. The reason for this is that we only use
+# HDF5 through Armadillo if we're running on a single node without MPI
+# (in which case, we access HDF5 through Armadillo for saving matrices
+# for ease of use and simplicity). If we use MPI, we use parallel HDF5
+# to read and write HDF5 files, which isn't supported by default when
+# using HDF5 through Armadillo. Armadillo also doesn't expose any way
+# of using parallel HDF5 through its interface (as far as I know). So,
+# we need to do things more manually with the HDF5 C API than we would
+# otherwise have to using Armadillo. This dichotomy repeats itself
+# elsewhere in this CMakeLists.txt file and in the C++ source code
+# itself.
+if (USE_MPI)
+  set (DETECT_HDF5 OFF CACHE BOOL "Should Armadillo detect and build HDF5")
+  find_package (HDF5 REQUIRED)
+  if (NOT ${HDF5_IS_PARALLEL})
+    message (FATAL_ERROR "Parallel HDF5 required for use with MPI")
+  endif ()
+endif ()
 add_subdirectory (armadillo)
 
 add_subdirectory (cxxopts)
@@ -38,6 +57,7 @@ configure_file (config.hpp.in config.hpp)
 add_library (illum)
 target_sources (illum PRIVATE illum.cpp)
 target_include_directories (illum PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries (illum PRIVATE ${HDF5_LIBRARIES})
 target_link_libraries (illum PUBLIC armadillo)
 target_link_libraries (illum PRIVATE fastbvh)
 if (USE_TBB)
@@ -50,11 +70,14 @@ add_executable (illum_cli)
 target_sources (illum_cli PUBLIC illum_cli.cpp)
 target_include_directories (illum_cli PRIVATE ${Boost_INCLUDE_DIR})
 target_include_directories (illum_cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-target_include_directories (illum_cli PRIVATE ${MPI_C_INCLUDE_DIRS})
+if (USE_MPI)
+  target_include_directories (illum_cli PRIVATE ${MPI_C_INCLUDE_DIRS})
+endif ()
 target_link_libraries (illum_cli PRIVATE ${Boost_LIBRARIES})
 target_link_libraries (illum_cli PRIVATE cxxopts)
 target_link_libraries (illum_cli PRIVATE illum)
 if (USE_MPI)
+  target_link_libraries (illum_cli PRIVATE ${HDF5_LIBRARIES})
   target_link_libraries (illum_cli PRIVATE ${MPI_LIBRARIES})
 endif ()
 target_compile_features (illum_cli PRIVATE cxx_std_17)
