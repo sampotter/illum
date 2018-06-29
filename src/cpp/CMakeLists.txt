@@ -41,6 +41,7 @@ endif ()
 # itself.
 if (USE_MPI)
   set (DETECT_HDF5 OFF CACHE BOOL "Should Armadillo detect and build HDF5")
+  set (ARMA_USE_HDF5 OFF)
   find_package (HDF5 REQUIRED)
   if (NOT ${HDF5_IS_PARALLEL})
     message (FATAL_ERROR "Parallel HDF5 required for use with MPI")
