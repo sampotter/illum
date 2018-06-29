@@ -1,3 +1,4 @@
-#cmakedefine01 ARMA_USE_HDF5
+#cmakedefine ARMA_USE_HDF5
+
 #cmakedefine01 USE_MPI
 #cmakedefine01 USE_TBB
