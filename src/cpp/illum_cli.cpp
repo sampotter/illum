@@ -330,6 +330,7 @@ void do_ratios_task(job_params & params, illum_context & context) {
       context.make_horizons(
         horizons, params.nphi, params.theta_eps, params.offset, j0, j1);
     });
+    nhoriz = nfaces;
   }
 
   arma::mat sun_positions;
