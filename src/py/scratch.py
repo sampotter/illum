@@ -332,13 +332,21 @@ ax.scatter(dirs_Phi[AboveH], dirs_Theta[AboveH], 1, 'r')
 ax.scatter(dirs_Phi[~AboveH], dirs_Theta[~AboveH], 1, 'b')
 fig.show()
 
-# plot ratios on surface
+# Load ratios from disk
+
+path = '/Volumes/Molly/Dropbox/Projects/misc/illum/src/cpp/build/Release/ratios.h5'
+with h5py.File(path) as f:
+    Ratios = f['ratios'][:]
+
+# alternatively, compute ratios from scratch
 
 Ratios = np.zeros(nfaces)
 for i in range(nfaces):
     print(i)
     Ratio, AboveH, dirs_Phi, dirs_Theta = check_visibility(i, p_sun, r_sun)
     Ratios[i] = Ratio
+
+# plot ratios on surface
 
 Sun_normals = p_sun.T - P
 Sun_normals /= np.sqrt(np.sum(Sun_normals**2, 1)).reshape(nfaces, 1)
