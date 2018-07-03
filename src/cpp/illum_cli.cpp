@@ -304,7 +304,6 @@ void do_horizons_task(job_params & params, illum_context & context) {
     *params.output_file = "horizons.h5";
   }
   timed("- saving horizon map to " + *params.output_file, [&] () {
-    horizons.save(arma::hdf5_name(*params.output_file, "horizons"));
     save_mat(*params.output_file, "horizons", horizons, nfaces, nphi, j0);
   });
 }
