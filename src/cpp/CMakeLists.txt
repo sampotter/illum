@@ -8,7 +8,7 @@ option (USE_TBB "Use TBB to parallelize" OFF)
 include (CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG ("-march=native" COMPILER_SUPPORTS_MARCH_NATIVE)
 if (COMPILER_SUPPORTS_MARCH_NATIVE)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
+  set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=native")
 endif ()
 
 find_package (Boost 1.60 REQUIRED COMPONENTS system filesystem)
