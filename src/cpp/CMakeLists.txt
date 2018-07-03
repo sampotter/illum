@@ -60,7 +60,6 @@ add_library (illum)
 target_compile_options (illum PRIVATE -Wall -Wextra -Wpedantic -Werror)
 target_sources (illum PRIVATE illum.cpp)
 target_include_directories (illum PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries (illum PRIVATE ${HDF5_LIBRARIES})
 target_link_libraries (illum PUBLIC armadillo)
 target_link_libraries (illum PRIVATE fastbvh)
 if (USE_TBB)
@@ -71,6 +70,13 @@ target_compile_features (illum PRIVATE cxx_std_14)
 
 add_executable (illum_cli)
 target_compile_options (illum_cli PRIVATE -Wall -Wextra -Wpedantic -Werror)
+if (UNIX)
+  set_property (
+	TARGET illum_cli
+	PROPERTY BUILD_RPATH
+	${Boost_LIBRARY_DIRS}
+	${HDF5_C_LIBRARY_DIRS})
+endif ()
 target_sources (illum_cli PUBLIC illum_cli.cpp)
 target_include_directories (illum_cli PRIVATE ${Boost_INCLUDE_DIR})
 target_include_directories (illum_cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
