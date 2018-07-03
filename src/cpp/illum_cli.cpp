@@ -301,7 +301,7 @@ void do_horizons_task(job_params & params, illum_context & context) {
       horizons, params.nphi, params.theta_eps, params.offset, j0, j1);
   });
   if (!params.output_file) {
-    *params.output_file = "horizons.h5";
+    params.output_file = "horizons.h5";
   }
   timed("- saving horizon map to " + *params.output_file, [&] () {
     save_mat(*params.output_file, "horizons", horizons, nfaces, nphi, j0);
