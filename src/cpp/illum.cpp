@@ -278,13 +278,13 @@ illum_context::impl::make_A(arma::sp_umat & A, double offset)
 
   colptr.push_back(0);
 
-  for (int j = 0; j < num_faces; ++j) {
+  for (size_t j = 0; j < num_faces; ++j) {
     auto tri_j = static_cast<Tri const *>(objects[j]);
     auto p_j = tri_j->getCentroid();
     auto n_j = tri_j->getNormal(unused);
     auto q_j = p_j + offset*n_j; // offset centroid = ray origin
     
-    for (int i = 0; i < num_faces; ++i) {
+    for (size_t i = 0; i < num_faces; ++i) {
       auto tri_i = static_cast<Tri const *>(objects[i]);
       auto p_i = tri_i->getCentroid();
       auto r_i = tri_i->getBoundingRadius();
@@ -297,9 +297,8 @@ illum_context::impl::make_A(arma::sp_umat & A, double offset)
       // Shoot a ray between the faces if they are (something *must*
       // be hit)
       IntersectionInfo info;
-      Ray ray(q_j, normalize(p_i, - q_j));
-      bool hit = bvh.getIntersection(ray, &info, false);
-      assert(hit);
+      Ray ray(q_j, normalize(p_i - q_j));
+      bvh.getIntersection(ray, &info, false);
 
       // Get the index of the triangle that was hit by the ray
       auto hit_index = static_cast<Tri const *>(info.object)->index;
@@ -307,7 +306,7 @@ illum_context::impl::make_A(arma::sp_umat & A, double offset)
       // Search for the triangle that was hit and insert it (in sorted
       // order) if it's a new visible triangle
       auto lb = std::lower_bound(rowind.begin(), rowind.end(), hit_index);
-      if (lb == rowind.end() || *lb != tri_i->index) {
+      if (lb == rowind.end() || *lb != static_cast<size_t>(tri_i->index)) {
         rowind.insert(lb, hit_index);
       }
     }
