@@ -29,7 +29,7 @@ get_objects(
   std::vector<tinyobj::shape_t> shapes;
   std::vector<tinyobj::material_t> materials;
   std::string err;
-  bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &err, path);
+  tinyobj::LoadObj(&attrib, &shapes, &materials, &err, path);
 
   /**
    * Build a vector of objects for use with our bounding volume
@@ -44,7 +44,7 @@ get_objects(
   auto const & vertices = attrib.vertices;
   auto const & normals = attrib.normals;
 
-  for (int i = 0; i < indices.size(); i += 3) {
+  for (size_t i = 0; i < indices.size(); i += 3) {
     tinyobj::index_t i0 = indices[i], i1 = indices[i + 1], i2 = indices[i + 2];
 
     auto const v0 = Vector3 {
@@ -180,7 +180,7 @@ struct join_horiz_reducer
   sp_inds<arma::uword> inds;
 
   join_horiz_reducer() {}
-  join_horiz_reducer(join_horiz_reducer & other, tbb::split) {}
+  join_horiz_reducer(join_horiz_reducer &, tbb::split) {}
 
   using blocked_range_type = tbb::blocked_range<
     typename std::vector<sp_inds<arma::uword>>::iterator>;
@@ -220,7 +220,7 @@ illum_context::impl::make_A(arma::sp_umat & A, double offset)
     auto & rowind = col.rowind;
     auto & colptr = col.colptr;
 
-    for (int i = 0; i < num_faces; ++i) {
+    for (size_t i = 0; i < num_faces; ++i) {
       auto tri_i = static_cast<Tri const *>(objects[i]);
       auto p_i = tri_i->getCentroid();
       auto r_i = tri_i->getBoundingRadius();
@@ -232,7 +232,8 @@ illum_context::impl::make_A(arma::sp_umat & A, double offset)
 
       // Shoot a ray between the faces if they are (something *must*
       // be hit)
-      assert(bvh.getIntersection(Ray(q_j, normalize(p_i - q_j)), &info, false));
+      Ray ray(q_j, normalize(p_i - q_j));
+      bvh.getIntersection(ray, &info, false);
 
       // Get the index of the triangle that was hit by the ray
       auto hit_index = static_cast<Tri const *>(info.object)->index;
@@ -240,7 +241,7 @@ illum_context::impl::make_A(arma::sp_umat & A, double offset)
       // Search for the triangle that was hit and insert it (in sorted
       // order) if it's a new visible triangle
       auto lb = std::lower_bound(rowind.begin(), rowind.end(), hit_index);
-      if (lb == rowind.end() || *lb != tri_i->index) {
+      if (lb == rowind.end() || *lb != static_cast<size_t>(tri_i->index)) {
         rowind.insert(lb, hit_index);
       }
     }
@@ -296,7 +297,9 @@ illum_context::impl::make_A(arma::sp_umat & A, double offset)
       // Shoot a ray between the faces if they are (something *must*
       // be hit)
       IntersectionInfo info;
-      assert(bvh.getIntersection(Ray(q_j, normalize(p_i - q_j)), &info, false));
+      Ray ray(q_j, normalize(p_i, - q_j));
+      bool hit = bvh.getIntersection(ray, &info, false);
+      assert(hit);
 
       // Get the index of the triangle that was hit by the ray
       auto hit_index = static_cast<Tri const *>(info.object)->index;
@@ -402,7 +405,7 @@ trace_horizon(
   };
 
   arma::vec horizon(arma::size(phis));
-  for (int i = 0; i < phis.n_elem; ++i) {
+  for (size_t i = 0; i < phis.n_elem; ++i) {
     horizon(i) = ray_search(phis(i));
   }
 
@@ -489,7 +492,7 @@ illum_context::impl::compute_visibility_ratios(
     vec::fixed<3> B = cross(T, N);
 
     mat disk(3, disk_XY.n_rows);
-    for (int j = 0; j < disk_XY.n_rows; ++j) {
+    for (size_t j = 0; j < disk_XY.n_rows; ++j) {
       disk.col(j) = sun_radius*(disk_XY(j, 0)*T + disk_XY(j, 1)*B);
     }
 
@@ -499,7 +502,7 @@ illum_context::impl::compute_visibility_ratios(
 
     int count = 0;
 
-    for (int j = 0; j < disk_XY.n_rows - 1; ++j) {
+    for (size_t j = 0; j < disk_XY.n_rows - 1; ++j) {
       vec::fixed<3> dir = btn.t()*normalise(d + disk.col(j));
 
       // TODO: not necessary---could store the horizons in the correct
@@ -517,7 +520,7 @@ illum_context::impl::compute_visibility_ratios(
       }
     }
 
-    ratios(ratio_ind) = count/(nphi - 1);
+    ratios(ratio_ind) = static_cast<double>(count)/(nphi - 1);
   };
 
 #if USE_TBB
