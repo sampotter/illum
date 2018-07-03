@@ -88,7 +88,6 @@ par_load_mat(
   hid_t dspace, memspace;
   hsize_t dims[2];
   hsize_t count[2], offset[2];
-  herr_t status;
 
   plist = H5Pcreate(H5P_FILE_ACCESS);
   H5Pset_fapl_mpio(plist, comm, info);
@@ -125,7 +124,7 @@ par_load_mat(
 
   plist = H5Pcreate(H5P_DATASET_XFER);
   H5Pset_dxpl_mpio(plist, H5FD_MPIO_COLLECTIVE);
-  status = H5Dread(dset, H5T_IEEE_F64LE, memspace, dspace, plist, &mat(0));
+  H5Dread(dset, H5T_IEEE_F64LE, memspace, dspace, plist, &mat(0));
   H5Pclose(plist);
 
   H5Sclose(memspace);
