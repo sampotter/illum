@@ -2,7 +2,11 @@ cmake_minimum_required (VERSION 3.11)
 
 project (illum)
 
+enable_language (CXX Fortran)
+
 option (BUILD_VTK_GUI "Build GUI application using VTK" OFF)
+option (USE_HDF5 "Use HDF5 for reading and writing files" OFF)
+option (USE_MPI "Use MPI to distribute" OFF)
 option (USE_TBB "Use TBB to parallelize" OFF)
 
 include (CheckCXXCompilerFlag)
@@ -12,11 +16,9 @@ if (COMPILER_SUPPORTS_MARCH_NATIVE)
 endif ()
 
 find_package (Boost 1.60 REQUIRED COMPONENTS system filesystem)
-
-if (BUILD_VTK_GUI)
-  find_package (VTK REQUIRED)
-  include (${VTK_USE_FILE})
-endif ()
+find_package (GLEW REQUIRED)
+find_package (GLUT REQUIRED)
+find_package (OpenGL REQUIRED)
 
 if (USE_MPI)
   find_package (MPI REQUIRED)
@@ -56,11 +58,16 @@ add_subdirectory (tinyobjloader)
 
 configure_file (config.hpp.in config.hpp)
 
+add_library (conduction STATIC)
+target_sources (conduction PRIVATE conductionT.f conductionQ.f tridag.for
+  conduction.cpp)
+
 add_library (illum)
 target_compile_options (illum PRIVATE -Wall -Wextra -Wpedantic -Werror)
-target_sources (illum PRIVATE illum.cpp)
+target_sources (illum PRIVATE illum.cpp conduction.cpp)
 target_include_directories (illum PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries (illum PUBLIC armadillo)
+target_link_libraries (illum PRIVATE conduction)
 target_link_libraries (illum PRIVATE fastbvh)
 if (USE_TBB)
   target_link_libraries (illum PRIVATE tbb)
@@ -70,13 +77,8 @@ target_compile_features (illum PRIVATE cxx_std_14)
 
 add_executable (illum_cli)
 target_compile_options (illum_cli PRIVATE -Wall -Wextra -Wpedantic -Werror)
-if (UNIX)
-  set_property (
-	TARGET illum_cli
-	PROPERTY BUILD_RPATH
-	${Boost_LIBRARY_DIRS}
-	${HDF5_C_LIBRARY_DIRS})
-endif ()
+set_property (TARGET illum_cli PROPERTY BUILD_RPATH ${Boost_LIBRARY_DIRS}
+  ${HDF5_C_LIBRARY_DIRS})
 target_sources (illum_cli PUBLIC illum_cli.cpp)
 target_include_directories (illum_cli PRIVATE ${Boost_INCLUDE_DIR})
 target_include_directories (illum_cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
@@ -85,18 +87,18 @@ if (USE_MPI)
 endif ()
 target_link_libraries (illum_cli PRIVATE ${Boost_LIBRARIES})
 target_link_libraries (illum_cli PRIVATE cxxopts)
+target_link_libraries (illum_cli PRIVATE ${HDF5_LIBRARIES})
 target_link_libraries (illum_cli PRIVATE illum)
 if (USE_MPI)
-  target_link_libraries (illum_cli PRIVATE ${HDF5_LIBRARIES})
   target_link_libraries (illum_cli PRIVATE ${MPI_LIBRARIES})
 endif ()
 target_compile_features (illum_cli PRIVATE cxx_std_17)
 
-if (BUILD_VTK_GUI)
-  add_executable (illum_gui)
-  target_compile_options (illum_gui PRIVATE -Wall -Wextra -Wpedantic -Werror)
-  target_sources (illum_gui PUBLIC illum_gui.cpp)
-  target_link_libraries (illum_gui PRIVATE illum)
-  target_link_libraries (illum_gui PRIVATE ${VTK_LIBRARIES})
-  target_compile_features (illum_gui PRIVATE cxx_std_11)
-endif ()
+add_executable (plotter)
+target_sources (plotter PRIVATE plotter.cpp)
+target_link_libraries (plotter PRIVATE ${GLEW_LIBRARIES})
+target_link_libraries (plotter PRIVATE ${GLUT_glut_LIBRARY})
+target_link_libraries (plotter PRIVATE ${OPENGL_gl_LIBRARY})
+target_link_libraries (plotter PRIVATE tinyobjloader)
+configure_file (graph.v.glsl graph.v.glsl COPYONLY)
+configure_file (graph.f.glsl graph.f.glsl COPYONLY)

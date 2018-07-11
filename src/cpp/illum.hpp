@@ -34,6 +34,8 @@ struct illum_context {
     opt_t<int> j1);
 
   int get_num_faces() const;
+
+  void render_ortho(arma::mat::fixed<4, 4> const & camera, arma::mat & out);
   
 private:
   struct impl;

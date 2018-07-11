@@ -4,6 +4,7 @@
 
 #include <config.hpp>
 
+#include "conduction.hpp"
 #include "sp_inds.hpp"
 
 #include <fastbvh>
@@ -450,6 +451,11 @@ compute_V(
   V = A.t()%A;
 }
 
+arma::vec::fixed<3> get_centroid(Object const * obj) {
+  auto p = obj->getCentroid();
+  return {p[0], p[1], p[2]};
+}
+
 void
 illum_context::impl::compute_visibility_ratios(
   arma::mat const & horizons,
@@ -473,53 +479,46 @@ illum_context::impl::compute_visibility_ratios(
 
   auto const compute_ratio = [&] (int obj_ind) {
     auto obj = objects[obj_ind];
-
     int ratio_ind = obj_ind - j0.value_or(0);
 
-    vec::fixed<3> p;
-    {
-      auto centroid = obj->getCentroid();
-      p(0) = centroid[0];
-      p(1) = centroid[1];
-      p(2) = centroid[2];
-    }
+    vec::fixed<3> p = get_centroid(obj);
 
-    auto d = sun_position - p;
-
-    auto N = normalise(d);
+    vec::fixed<3> N = normalise(sun_position - p);
     vec::fixed<3> T = normalise((eye(3, 3) - N*N.t())*randn<vec>(3));
     vec::fixed<3> B = cross(T, N);
 
     mat disk(3, disk_XY.n_rows);
     for (size_t j = 0; j < disk_XY.n_rows; ++j) {
-      disk.col(j) = sun_radius*(disk_XY(j, 0)*T + disk_XY(j, 1)*B);
+      disk.col(j) = sun_position +
+        sun_radius*(disk_XY(j, 0)*T + disk_XY(j, 1)*B);
     }
 
-    auto btn = get_frenet_frame(static_cast<Tri const *>(obj));
+    auto BTN = get_frenet_frame(static_cast<Tri const *>(obj));
 
     arma::vec horizon = horizons.col(ratio_ind);
 
     int count = 0;
 
     for (size_t j = 0; j < disk_XY.n_rows - 1; ++j) {
-      vec::fixed<3> dir = btn.t()*normalise(d + disk.col(j));
-
-      // TODO: not necessary---could store the horizons in the correct
-      // format in the first place
-      auto phi = std::atan2(dir(1), dir(0));
-      if (phi < 0) phi += TWO_PI;
+      vec::fixed<3> dir = BTN.t()*normalise(disk.col(j) - p);
 
       auto theta = std::acos(dir(2));
+      auto phi = std::atan2(dir(1), dir(0));
+      if (phi < 0) {
+        phi += TWO_PI;
+      }
 
       auto phi_index = static_cast<int>(std::floor(phi/delta_phi));
       auto t = (phi - phi_index*delta_phi)/delta_phi;
 
-      if (theta < (1 - t)*horizon(phi_index) + t*horizon(phi_index + 1)) {
+      if (theta < horizon(phi_index) + t*delta_phi) {
         ++count;
       }
     }
 
     ratios(ratio_ind) = static_cast<double>(count)/(nphi - 1);
+
+    ratios(ratio_ind) *= arma::dot(N, BTN.col(2));
   };
 
 #if USE_TBB
@@ -550,3 +549,58 @@ void fib_spiral(arma::mat & xy, int n)
     r += dr;
   }
 }
+
+struct thermal_model {
+  int nz;
+  double t;
+  arma::vec z, ti, rhoc, Qprev, F;
+  arma::mat T;
+
+  thermal_model(int nfaces) {
+    z = {
+      0.00197, 0.00434, 0.00718, 0.01060, 0.01469, 0.01960, 0.02549, 0.03257,
+      0.04105, 0.05124, 0.06346, 0.07812, 0.09572, 0.11684, 0.14218, 0.17259,
+      0.20908, 0.25287, 0.30542
+    };
+
+    nz = z.n_elem;
+
+    t = 0;
+    
+    ti.set_size(nz);
+    ti.fill(70.0);
+
+    rhoc = {
+      1.42491e+06, 1.41294e+06, 1.40533e+06, 1.39643e+06, 1.38608e+06,
+      1.37414e+06, 1.36048e+06, 1.34503e+06, 1.32780e+06, 1.30894e+06,
+      1.28872e+06, 1.26762e+06, 1.24631e+06, 1.22562e+06, 1.20649e+06,
+      1.18977e+06, 1.17615e+06, 1.16592e+06
+    };
+
+    Qprev.set_size(nfaces);
+    F.set_size(nfaces);
+
+    T.set_size(nz + 1, nfaces);
+    T.fill(0.0);
+  }
+
+  void step(double dt, arma::vec & Q) {
+    for (auto j = 0ull; j < T.n_cols; ++j) {
+      conductionQ(
+        nz,
+        z.memptr(),
+        dt,
+        Qprev(j),
+        &Q(j),
+        &T(1, j),
+        &ti(0),
+        &rhoc(0),
+        0.99,
+        &T(0, j),
+        0.0,
+        &F(j));
+    }
+    Qprev = Q;
+    t += dt;
+  }
+};

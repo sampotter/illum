@@ -1,30 +1,3 @@
-* TODO Reminders
-  - check to see if ratios are already effectively being parallelized
-    by MPI when horizons are loaded from file
-  - MPI parallelize horizon creation
-
-*for shape0_dec5000*
-
-TBB=OFF MPI=OFF
-- loading horizon map from horizons.h5 [0.011503s]
-- computing ratios *[0.06181s]*
-- writing ratios to ratios.h5 [0.012513s]
-
-TBB=ON MPI=OFF
-- loading horizon map from horizons.h5 [0.009882s]
-- computing ratios *[0.035482s]*
-- writing ratios to ratios.h5 [0.01046s]
-
-TBB=OFF MPI=ON
-- loading horizon map from horizons.h5 [0.024096s]
-- loading horizon map from horizons.h5 [0.024084s]
-- computing ratios [0.053959s]
-- computing ratios [0.051008s]
-- writing ratios to ratios.h5 [0.005683s]
-- writing ratios to ratios.h5 [0.002581s]
-
-
-
 * General
 ** DONE Read Boost MPI tutorial
    :LOGBOOK:
@@ -70,9 +43,10 @@ TBB=OFF MPI=ON
 ** DONE Write horizons out and plot in Python
 ** TODO Compressing the horizon map
 * Illumination Modeling
+** TODO [#A] Fix direct illumination in Arma
 ** TODO Read Ingersoll paper
 ** TODO Recreate Ingersoll results
-** TODO Derive recurrence for illumination
+** DONE Derive recurrence for illumination
 * Implementation
 ** DONE Replace "objects.size()" use with a "num_faces" variable
 ** DONE Get Armadillo HDF5 working again

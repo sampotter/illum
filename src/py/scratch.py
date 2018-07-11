@@ -1,27 +1,23 @@
 #!/usr/bin/env python3
 
-import matplotlib.pyplot as plt
-
-plt.ion()
+import matplotlib.pyplot as plt; plt.ion()
 
 import h5py
 import numba
 import numpy as np
+import points
 import scipy.sparse
 import trimesh
 
 from itertools import combinations, product
 from mayavi import mlab
-
-import points
-
 from sparse import *
 
 ################################################################################
 # IMPORT GEOMETRY
 
-# tri = trimesh.load('../../data/SHAPE0_dec5000.obj')
-tri = trimesh.load('../../data/SHAPE0.OBJ')
+tri = trimesh.load('../../data/SHAPE0_dec5000.obj')
+# tri = trimesh.load('../../data/SHAPE0.OBJ')
 F = tri.faces
 V = tri.vertices
 nfaces = F.shape[0]
@@ -76,35 +72,21 @@ epsilon = R.max()
 
 # A_zero = np.zeros((nfaces, nfaces), dtype=np.bool)
 # A_eps = np.zeros((nfaces, nfaces), dtype=np.bool)
-A_R = np.zeros((nfaces, nfaces), dtype=np.bool)
-for j in range(nfaces):
-    print(j)
-    # A_zero[:, j] = (P - P[j, :])@N[j, :] > 0
-    # A_eps[:, j] = (P - P[j, :])@N[j, :] > -epsilon
-    A_R[:, j] = (P - P[j, :])@N[j, :] > -R
+# A_R = np.zeros((nfaces, nfaces), dtype=np.bool)
+# for j in range(nfaces):
+#     print(j)
+#     # A_zero[:, j] = (P - P[j, :])@N[j, :] > 0
+#     # A_eps[:, j] = (P - P[j, :])@N[j, :] > -epsilon
+#     A_R[:, j] = (P - P[j, :])@N[j, :] > -R
 
 # V_zero = np.multiply(A_zero.T, A_zero)
 # V_eps = np.multiply(A_eps.T, A_eps)
-V_R = np.multiply(A_R.T, A_R)
+# V_R = np.multiply(A_R.T, A_R)
 
 ################################################################################
 # GETTING DATA FROM ARMADILLO
 
-A_before = csc_from_h5_file('../cpp/build/Release/A_before.h5', nfaces, nfaces, np.bool)
-A_after = csc_from_h5_file('../cpp/build/Release/A_after.h5', nfaces, nfaces, np.bool)
 V_arma = csc_from_h5_file('../cpp/build/Release/V.h5', nfaces, nfaces, np.bool)
-
-fig = plt.figure()
-
-fig.add_subplot(321).imshow(A_R)
-fig.add_subplot(322).imshow(V_R)
-
-fig.add_subplot(323).imshow(np.array(A_before.todense()))
-fig.add_subplot(324).imshow(np.array(V_arma.todense()))
-
-fig.add_subplot(325).imshow(np.array(A_after.todense()))
-
-fig.show()
 
 ################################################################################
 # HORIZON MAPS
@@ -157,7 +139,7 @@ plt.show()
 # PLOT VISIBILITY FOR ONE FACE
 
 j = np.random.randint(nfaces)
-C = np.array(A_after.getrow(j).todense(), dtype=np.float).flatten()
+C = np.array(V_arma.getrow(j).todense(), dtype=np.float).flatten()
 C[j] = -1
 
 fig = mlab.gcf()
@@ -177,8 +159,8 @@ mlab.show()
 
 import matplotlib.pyplot as plt
 fig = plt.figure()
-ax = fig.add_subplot(1, 1, 1)
-ax.imshow(V_R)
+# fig.add_subplot(1, 2, 1).imshow(V_R)
+fig.add_subplot(1, 2, 2).imshow(V_arma.todense())
 plt.show()
 
 ################################################################################
@@ -337,14 +319,15 @@ fig.show()
 path = '/Volumes/Molly/Dropbox/Projects/misc/illum/src/cpp/build/Release/ratios.h5'
 with h5py.File(path) as f:
     Ratios = f['ratios'][:]
+Ratios = Ratios.flatten()
 
 # alternatively, compute ratios from scratch
 
-Ratios = np.zeros(nfaces)
-for i in range(nfaces):
-    print(i)
-    Ratio, AboveH, dirs_Phi, dirs_Theta = check_visibility(i, p_sun, r_sun)
-    Ratios[i] = Ratio
+# Ratios = np.zeros(nfaces)
+# for i in range(nfaces):
+#     print(i)
+#     Ratio, AboveH, dirs_Phi, dirs_Theta = check_visibility(i, p_sun, r_sun)
+#     Ratios[i] = Ratio
 
 # plot ratios on surface
 
@@ -363,5 +346,6 @@ mesh.mlab_source.update()
 mesh2 = mlab.pipeline.set_active_attribute(mesh, cell_scalars='face_color')
 surf = mlab.pipeline.surface(mesh2, colormap='gray')
 
-mlab.show()
+mlab.view(90, 90)
 
+mlab.savefig('hi.png')

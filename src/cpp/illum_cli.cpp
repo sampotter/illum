@@ -23,15 +23,15 @@ using opt_t = std::experimental::optional<T>;
 #include "illum.hpp"
 #include "timer.hpp"
 
-#if USE_MPI
-
+#if USE_HDF5
 #include <hdf5.h>
-#include <mpi.h>
+#endif
 
+#if USE_MPI
+#include <mpi.h>
 int mpi_size, mpi_rank;
 MPI_Comm comm = MPI_COMM_WORLD;
 MPI_Info info = MPI_INFO_NULL;
-
 #endif
 
 template <typename T>
@@ -50,15 +50,20 @@ std::pair<arma::uvec, arma::uvec> get_rowinds_and_colptrs(arma::SpMat<T> const &
 }
 
 template <typename T>
-void write_csc_inds(arma::SpMat<T> const & S, const char * path) {
+void write_csc_inds(arma::SpMat<T> const & S, std::string const & path) {
   auto values = arma::nonzeros(S);
-  values.save(arma::hdf5_name(path, "values", arma::hdf5_opts::append));
-
   arma::uvec rowinds, colptrs;
   std::tie(rowinds, colptrs) = get_rowinds_and_colptrs(S);
-
-  rowinds.save(arma::hdf5_name(path, "rowinds", arma::hdf5_opts::append));
-  colptrs.save(arma::hdf5_name(path, "colptrs", arma::hdf5_opts::append));
+#if USE_HDF5
+  std::string h5path = path + ".h5";
+  values.save(arma::hdf5_name(h5path.c_str(), "values", arma::hdf5_opts::append));
+  rowinds.save(arma::hdf5_name(h5path.c_str(), "rowinds", arma::hdf5_opts::append));
+  colptrs.save(arma::hdf5_name(h5path.c_str(), "colptrs", arma::hdf5_opts::append));
+#else
+  values.save(path + "_values.bin");
+  rowinds.save(path + "_values.bin");
+  colptrs.save(path + "_values.bin");
+#endif
 }
 
 void write_coo(arma::sp_umat const & S, const char * path) {
@@ -77,13 +82,14 @@ void write_coo(arma::sp_umat const & S, const char * path) {
 #if USE_MPI
 void
 par_load_mat(
-  std::string const & hdf5_path,
+  std::string const & path,
   std::string const & dataset_name,
   arma::mat & mat,
   opt_t<int> j0,
   opt_t<int> j1,
   opt_t<int> & n_cols)
 {
+#if USE_HDF5
   hid_t file, dset, plist;
   hid_t dspace, memspace;
   hsize_t dims[2];
@@ -91,7 +97,7 @@ par_load_mat(
 
   plist = H5Pcreate(H5P_FILE_ACCESS);
   H5Pset_fapl_mpio(plist, comm, info);
-  file = H5Fopen(hdf5_path.c_str(), H5F_ACC_RDONLY, plist);
+  file = H5Fopen(path.c_str(), H5F_ACC_RDONLY, plist);
   H5Pclose(plist);
 
   plist = H5Pcreate(H5P_DATASET_ACCESS);
@@ -132,12 +138,22 @@ par_load_mat(
   H5Dclose(dset);
 
   H5Fclose(file);
+#else
+  (void) dataset_name;
+  (void) n_cols;
+
+  // TODO: this very probably doesn't work... will probably need to
+  // cook something up using MPI-IO or disallow this
+  std::string node_path = path + "_" + std::to_string(*j0) + "_" +
+    std::to_string(*j1) + ".bin";
+  mat.load(node_path);
+#endif
 }
 #endif
 
 void
 load_mat(
-  std::string const & hdf5_path,
+  std::string const & path,
   std::string const & dataset_name,
   arma::mat & mat,
   opt_t<int> & j0,
@@ -145,22 +161,29 @@ load_mat(
   opt_t<int> & n_cols)
 {
 #if USE_MPI
-  par_load_mat(hdf5_path, dataset_name, mat, j0, j1, n_cols);
+  par_load_mat(path, dataset_name, mat, j0, j1, n_cols);
 #else
-  mat.load(arma::hdf5_name(hdf5_path, dataset_name));
+  (void) j0;
+  (void) j1;
+  (void) n_cols;
+  mat.load(arma::hdf5_name(path, dataset_name));
 #endif
 }
 
 #if USE_MPI
 void
 par_save_mat(
-  std::string const & hdf5_path,
+  std::string const & path,
   std::string const & dataset_name,
   arma::mat const & mat,
-  opt_t<int> & n_cols,
-  opt_t<int> & n_rows,
-  opt_t<int> & j0)
+  opt_t<int> n_cols,
+  opt_t<int> n_rows,
+  opt_t<int> j0,
+  opt_t<int> j1)
 {
+#if USE_HDF5
+  (void) j1; // TODO: not using j1 is a bug---fix this
+
   hid_t file, dset, plist;
   hid_t filespace, memspace;
   hsize_t filespace_dims[2];
@@ -168,7 +191,7 @@ par_save_mat(
 
   plist = H5Pcreate(H5P_FILE_ACCESS);
   H5Pset_fapl_mpio(plist, comm, info);
-  file = H5Fcreate(hdf5_path.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, plist);
+  file = H5Fcreate((path + ".h5").c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, plist);
   H5Pclose(plist);
 
   if (mat.is_vec()) {
@@ -214,31 +237,45 @@ par_save_mat(
   H5Sclose(memspace);
 
   H5Fclose(file);
+#else
+  (void) dataset_name;
+  (void) n_rows;
+  (void) n_cols;
+
+  std::string node_path = path + "_" + std::to_string(*j0) + "_" +
+    std::to_string(*j1) + ".bin";
+  mat.save(node_path);
+#endif
 }
 #endif
 
 /**
- * hdf5_path: path to hdf5 file into which to write
+ * path: path to hdf5 file into which to write
  * dataset_name: name of new dataset
  * mat: the Armadillo matrix that will be written to `dataset_name' in
- *      `hdf5_path'
+ *      `path'
  * n_cols: number of columns(Arma)/rows(HDF5) in HDF5 file dataset
  * n_rows: number of rows(Arma)/columns(HDF5) in HDF5 file dataset
  * j0: column(Arma)/row(HDF5) offset into HDF5 file dataset---used by MPI
  */
 void
 save_mat(
-  std::string const & hdf5_path,
+  std::string const & path,
   std::string const & dataset_name,
   arma::mat const & mat,
   opt_t<int> n_cols,
   opt_t<int> n_rows,
-  opt_t<int> j0)
+  opt_t<int> j0,
+  opt_t<int> j1)
 {
 #if USE_MPI
-  par_save_mat(hdf5_path, dataset_name, mat, n_cols, n_rows, j0);
+  par_save_mat(path, dataset_name, mat, n_cols, n_rows, j0, j1);
 #else
-  mat.save(arma::hdf5_name(hdf5_path, dataset_name));
+  (void) n_cols;
+  (void) n_rows;
+  (void) j0;
+  (void) j1;
+  mat.save(arma::hdf5_name(path + ".h5", dataset_name));
 #endif
 }
 
@@ -283,7 +320,7 @@ void do_visibility_task(job_params & params, illum_context & context) {
   timed("- assembling A", [&] () { context.make_A(A, params.offset); });
   timed("- computing V", [&] () { compute_V(A, V); });
   timed("- writing HDF5 files", [&] () {
-    write_csc_inds(V, "V.h5");
+    write_csc_inds(V, "V");
   });
 }
 
@@ -299,10 +336,14 @@ void do_horizons_task(job_params & params, illum_context & context) {
       horizons, params.nphi, params.theta_eps, params.offset, j0, j1);
   });
   if (!params.output_file) {
+#if USE_HDF5
     params.output_file = std::string("horizons.h5");
+#else
+    params.output_file = std::string("horizons.bin");
+#endif
   }
   timed("- saving horizon map to " + *params.output_file, [&] () {
-    save_mat(*params.output_file, "horizons", horizons, nfaces, nphi, j0);
+    save_mat(*params.output_file, "horizons", horizons, nfaces, nphi, j0, j1);
   });
 }
 
@@ -364,8 +405,8 @@ void do_ratios_task(job_params & params, illum_context & context) {
     ratios.col(j) = tmp;
   }
 
-  timed("- writing ratios to ratios.h5", [&] () {
-    save_mat("ratios.h5", "ratios", ratios, nhoriz, nsunpos, j0);
+  timed("- saving ratios", [&] () {
+    save_mat("ratios", "ratios", ratios, nhoriz, nsunpos, j0, j1);
   });
 }
 
