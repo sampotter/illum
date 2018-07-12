@@ -4,7 +4,6 @@
 
 #include <config.hpp>
 
-#include "conduction.hpp"
 #include "sp_inds.hpp"
 
 #include <fastbvh>
@@ -467,7 +466,7 @@ illum_context::impl::get_direct_illum(
   static const auto TWO_PI = 2*arma::datum::pi;
 
   int nhoriz = j1.value_or(horizons.n_cols) - j0.value_or(0);
-  assert(horizons.n_cols == nhoriz);
+  assert(horizons.n_cols == arma::uword(nhoriz));
 
   arma::vec direct;
   direct.set_size(nhoriz);
@@ -554,58 +553,3 @@ void fib_spiral(arma::mat & xy, int n)
     r += dr;
   }
 }
-
-struct thermal_model {
-  int nz;
-  double t;
-  arma::vec z, ti, rhoc, Qprev, F;
-  arma::mat T;
-
-  thermal_model(int nfaces) {
-    z = {
-      0.00197, 0.00434, 0.00718, 0.01060, 0.01469, 0.01960, 0.02549, 0.03257,
-      0.04105, 0.05124, 0.06346, 0.07812, 0.09572, 0.11684, 0.14218, 0.17259,
-      0.20908, 0.25287, 0.30542
-    };
-
-    nz = z.n_elem;
-
-    t = 0;
-    
-    ti.set_size(nz);
-    ti.fill(70.0);
-
-    rhoc = {
-      1.42491e+06, 1.41294e+06, 1.40533e+06, 1.39643e+06, 1.38608e+06,
-      1.37414e+06, 1.36048e+06, 1.34503e+06, 1.32780e+06, 1.30894e+06,
-      1.28872e+06, 1.26762e+06, 1.24631e+06, 1.22562e+06, 1.20649e+06,
-      1.18977e+06, 1.17615e+06, 1.16592e+06
-    };
-
-    Qprev.set_size(nfaces);
-    F.set_size(nfaces);
-
-    T.set_size(nz + 1, nfaces);
-    T.fill(0.0);
-  }
-
-  void step(double dt, arma::vec & Q) {
-    for (auto j = 0ull; j < T.n_cols; ++j) {
-      conductionQ(
-        nz,
-        z.memptr(),
-        dt,
-        Qprev(j),
-        &Q(j),
-        &T(1, j),
-        &ti(0),
-        &rhoc(0),
-        0.99,
-        &T(0, j),
-        0.0,
-        &F(j));
-    }
-    Qprev = Q;
-    t += dt;
-  }
-};

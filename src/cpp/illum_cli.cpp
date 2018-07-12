@@ -21,6 +21,7 @@ using opt_t = std::experimental::optional<T>;
 
 #include "constants.hpp"
 #include "illum.hpp"
+#include "thermal.hpp"
 #include "timer.hpp"
 
 #if USE_MPI
@@ -82,6 +83,8 @@ load_mat(
     std::to_string(*i1) + ".bin";
   mat.load(node_path);
 #else
+  (void) i0;
+  (void) i1;
   mat.load(path);
 #endif
 }
@@ -148,10 +151,9 @@ void do_visibility_task(job_params & params, illum_context & context) {
 }
 
 void do_horizons_task(job_params & params, illum_context & context) {
-  int nfaces = context.get_num_faces();
   opt_t<int> i0, i1;
 #if USE_MPI
-  set_i0_and_i1(nfaces, i0, i1);
+  set_i0_and_i1(context.get_num_faces(), i0, i1);
 #endif
   arma::mat horizons;
   timed("- building horizon map", [&] () {
@@ -213,6 +215,8 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
   arma::mat direct(horizons.n_cols, nsunpos);
   arma::vec avgdir(direct.n_rows);
 
+  thermal_model therm {nfaces};
+
   for (int j = 0; j < nsunpos; ++j) {
     timed("- computing direct illumination", [&] () {
       direct.col(j) = context.get_direct_illum(
@@ -225,6 +229,10 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
         avgdir += (direct.col(j) - avgdir)/(j + 1);
       }
     });
+
+    timed("- stepping thermal model", [&] () {
+      therm.step(600., 586.2*direct.col(j));
+    });
   }
 
   timed("- saving direct illumination", [&] () {
@@ -233,6 +241,10 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
 
   timed("- saving average direct illumination", [&] () {
     save_mat("avgdir", avgdir, i0, i1);
+  });
+
+  timed("- saving thermal", [&] () {
+    save_mat("thermal", therm.T.row(0).t(), i0, i1);
   });
 }
 

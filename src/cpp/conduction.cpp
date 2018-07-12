@@ -21,10 +21,10 @@ void conductionq_(
   double * Tsurf, double * Fgeotherm, double * Fsurf);
 
 void conductionQ(
-  int nz, double const * z, double dt, double Qn, double * Qnp1,
+  int nz, double const * z, double dt, double Qn, double Qnp1,
   double * T, double const * ti, double const * rhoc, double emiss,
   double * Tsurf, double Fgeotherm, double * Fsurf)
 {
-  conductionq_(&nz, z, &dt, &Qn, Qnp1, T, ti, rhoc, &emiss, Tsurf,
+  conductionq_(&nz, z, &dt, &Qn, &Qnp1, T, ti, rhoc, &emiss, Tsurf,
                &Fgeotherm, Fsurf);
 }

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import glob
 import moderngl
@@ -9,7 +11,7 @@ from moderngl.ext.obj import Obj
 from PIL import Image
 from pyrr import Matrix44
 
-def main(dipath, objpath, width, height, outpath):
+def main(dipath, objpath, width, height, outpath, normalize):
     paths = glob.glob(dipath)
     nfiles = len(paths)
 
@@ -40,6 +42,10 @@ def main(dipath, objpath, width, height, outpath):
             assert(ncols == nsunpos)
             tmp = np.fromfile(f, dtype=np.float64)
             direct_illum[i0:i1, :] = tmp.reshape(ncols, nrows).T
+
+    if normalize:
+        direct_illum -= direct_illum.min()
+        direct_illum /= direct_illum.max()
 
     tri = trimesh.load(objpath)
     nfaces = tri.faces.shape[0]
@@ -132,6 +138,7 @@ if __name__ == '__main__':
     parser.add_argument('-W', '--width', type=int, default=512)
     parser.add_argument('-H', '--height', type=int, default=512)
     parser.add_argument('-o', '--output_path', type=str, default='./tmp')
+    parser.add_argument('-n', '--normalize', action='store_true')
 
     args = parser.parse_args()
 
@@ -140,6 +147,7 @@ if __name__ == '__main__':
     width = args.width
     height = args.height
     outpath = args.output_path
+    normalize = args.normalize
 
     if os.path.exists(outpath):
         if not os.path.isdir(outpath):
@@ -147,4 +155,4 @@ if __name__ == '__main__':
     else:
         os.makedirs(outpath)
 
-    main(dipath, objpath, width, height, outpath)
+    main(dipath, objpath, width, height, outpath, normalize)
