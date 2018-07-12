@@ -107,11 +107,11 @@ struct illum_context::impl
     opt_t<int> j0 = opt_t <int> {},
     opt_t<int> j1 = opt_t <int> {});
 
-  void compute_visibility_ratios(
+  void get_direct_illum(
     arma::mat const & horizons,
     arma::vec const & sun_position,
     arma::mat const & disk_xy,
-    arma::vec & ratios,
+    arma::vec & direct,
     double sun_radius,
     opt_t<int> const & j0,
     opt_t<int> const & j1);
@@ -151,20 +151,20 @@ illum_context::make_horizons(
 }
 
 void
-illum_context::compute_visibility_ratios(
+illum_context::get_direct_illum(
   arma::mat const & horizons,
   arma::vec const & sun_position,
   arma::mat const & disk_xy,
-  arma::vec & ratios,
+  arma::vec & direct,
   double sun_radius,
   opt_t<int> j0,
   opt_t<int> j1)
 {
-  pimpl->compute_visibility_ratios(
+  pimpl->get_direct_illum(
     horizons,
     sun_position,
     disk_xy,
-    ratios,
+    direct,
     sun_radius,
     j0,
     j1);
@@ -457,11 +457,11 @@ arma::vec::fixed<3> get_centroid(Object const * obj) {
 }
 
 void
-illum_context::impl::compute_visibility_ratios(
+illum_context::impl::get_direct_illum(
   arma::mat const & horizons,
   arma::vec const & sun_position,
   arma::mat const & disk_XY,
-  arma::vec & ratios,
+  arma::vec & direct,
   double sun_radius,
   opt_t<int> const & j0,
   opt_t<int> const & j1)
@@ -472,14 +472,14 @@ illum_context::impl::compute_visibility_ratios(
 
   int nhoriz = j1.value_or(horizons.n_cols) - j0.value_or(0);
   assert(horizons.n_cols == nhoriz);
-  ratios.set_size(nhoriz);
+  direct.set_size(nhoriz);
 
   auto nphi = horizons.n_rows;
   auto delta_phi = TWO_PI/(nphi - 1);
 
-  auto const compute_ratio = [&] (int obj_ind) {
+  auto const compute_direct_illum = [&] (int obj_ind) {
     auto obj = objects[obj_ind];
-    int ratio_ind = obj_ind - j0.value_or(0);
+    int dir_ind = obj_ind - j0.value_or(0);
 
     vec::fixed<3> p = get_centroid(obj);
 
@@ -495,7 +495,7 @@ illum_context::impl::compute_visibility_ratios(
 
     auto BTN = get_frenet_frame(static_cast<Tri const *>(obj));
 
-    arma::vec horizon = horizons.col(ratio_ind);
+    arma::vec horizon = horizons.col(dir_ind);
 
     int count = 0;
 
@@ -516,19 +516,24 @@ illum_context::impl::compute_visibility_ratios(
       }
     }
 
-    ratios(ratio_ind) = static_cast<double>(count)/(nphi - 1);
+    // Initially set direct illumination to be the percentage of the
+    // "sun points" that are visibile above the horizon
+    direct(dir_ind) = static_cast<double>(count)/(nphi - 1);
 
-    ratios(ratio_ind) *= arma::dot(N, BTN.col(2));
+    // Scale the direct illumination by the cosine between the normal
+    // pointing towards the sun and the surface normal
+    // (i.e. assume Lambertian---fine for thermal)
+    direct(dir_ind) *= arma::dot(N, BTN.col(2));
   };
 
 #if USE_TBB
   tbb::parallel_for(
     size_t(j0.value_or(0)),
     size_t(j1.value_or(horizons.n_cols)),
-    compute_ratio);
+    compute_direct_illum);
 #else
   for (int j = j0.value_or(0); j < j1.value_or(horizons.n_cols); ++j) {
-    compute_ratio(j);
+    compute_direct_illum(j);
   }
 #endif
 }

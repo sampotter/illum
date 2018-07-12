@@ -256,7 +256,7 @@ void display() {
   glm::mat4 model;
 
   if (rotate)
-    model = glm::rotate(glm::mat4(1.0f), glm::radians(glutGet(GLUT_ELAPSED_TIME) / 100.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    model = glm::rotate(glm::mat4(1.0f), glm::radians(0), glm::vec3(0.0f, 0.0f, 1.0f));
 
   else
     model = glm::mat4(1.0f);
@@ -294,8 +294,6 @@ void display() {
   glDisableVertexAttribArray(attribute_coord2d);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-
-  glutSwapBuffers();
 }
 
 void free_resources() {
@@ -303,11 +301,6 @@ void free_resources() {
 }
 
 int main(int argc, char *argv[]) {
-  glutInit(&argc, argv);
-  glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
-  glutInitWindowSize(640, 480);
-  glutCreateWindow("My Graph");
-
   GLenum glew_status = glewInit();
 
   if (GLEW_OK != glew_status) {
@@ -327,13 +320,6 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Your GPU does not have any vertex texture image units\n");
     return 1;
   }
-
-  printf("Use left/right/up/down to move.\n");
-  printf("Use pageup/pagedown to change the horizontal scale.\n");
-  printf("Press home to reset the position and scale.\n");
-  printf("Press F1 to toggle interpolation.\n");
-  printf("Press F2 to toggle clamping.\n");
-  printf("Press F3 to toggle rotation.\n");
 
   if (init_resources()) {
     glutDisplayFunc(display);

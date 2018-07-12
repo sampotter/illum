@@ -23,10 +23,6 @@ using opt_t = std::experimental::optional<T>;
 #include "illum.hpp"
 #include "timer.hpp"
 
-#if USE_HDF5
-#include <hdf5.h>
-#endif
-
 #if USE_MPI
 #include <mpi.h>
 int mpi_size, mpi_rank;
@@ -54,16 +50,9 @@ void write_csc_inds(arma::SpMat<T> const & S, std::string const & path) {
   auto values = arma::nonzeros(S);
   arma::uvec rowinds, colptrs;
   std::tie(rowinds, colptrs) = get_rowinds_and_colptrs(S);
-#if USE_HDF5
-  std::string h5path = path + ".h5";
-  values.save(arma::hdf5_name(h5path.c_str(), "values", arma::hdf5_opts::append));
-  rowinds.save(arma::hdf5_name(h5path.c_str(), "rowinds", arma::hdf5_opts::append));
-  colptrs.save(arma::hdf5_name(h5path.c_str(), "colptrs", arma::hdf5_opts::append));
-#else
   values.save(path + "_values.bin");
   rowinds.save(path + "_values.bin");
   colptrs.save(path + "_values.bin");
-#endif
 }
 
 void write_coo(arma::sp_umat const & S, const char * path) {
@@ -79,203 +68,39 @@ void write_coo(arma::sp_umat const & S, const char * path) {
   f.close();
 }
 
-#if USE_MPI
-void
-par_load_mat(
-  std::string const & path,
-  std::string const & dataset_name,
-  arma::mat & mat,
-  opt_t<int> j0,
-  opt_t<int> j1,
-  opt_t<int> & n_cols)
-{
-#if USE_HDF5
-  hid_t file, dset, plist;
-  hid_t dspace, memspace;
-  hsize_t dims[2];
-  hsize_t count[2], offset[2];
-
-  plist = H5Pcreate(H5P_FILE_ACCESS);
-  H5Pset_fapl_mpio(plist, comm, info);
-  file = H5Fopen(path.c_str(), H5F_ACC_RDONLY, plist);
-  H5Pclose(plist);
-
-  plist = H5Pcreate(H5P_DATASET_ACCESS);
-  dset = H5Dopen(file, dataset_name.c_str(), plist);
-  H5Pclose(plist);
-
-  dspace = H5Dget_space(dset);
-  assert(H5Sget_simple_extent_ndims(dspace) == 2);
-  H5Sget_simple_extent_dims(dspace, dims, nullptr);
-
-  // NOTE: HDF5 is row-major and Armadillo is column-major---we
-  // transpose here (and elsewhere)
-  n_cols = dims[0];
-  // n_rows = dims[1];
-
-  int ncols = *j1 - *j0;
-  int nrows = dims[1];
-
-  mat.set_size(nrows, ncols);
-
-  count[0] = ncols;
-  count[1] = nrows;
-
-  offset[0] = *j0;
-  offset[1] = 0;
-
-  H5Sselect_hyperslab(dspace, H5S_SELECT_SET, offset, nullptr, count, nullptr);
-
-  memspace = H5Screate_simple(2, count, nullptr);
-
-  plist = H5Pcreate(H5P_DATASET_XFER);
-  H5Pset_dxpl_mpio(plist, H5FD_MPIO_COLLECTIVE);
-  H5Dread(dset, H5T_IEEE_F64LE, memspace, dspace, plist, &mat(0));
-  H5Pclose(plist);
-
-  H5Sclose(memspace);
-  H5Sclose(dspace);
-  H5Dclose(dset);
-
-  H5Fclose(file);
-#else
-  (void) dataset_name;
-  (void) n_cols;
-
-  // TODO: this very probably doesn't work... will probably need to
-  // cook something up using MPI-IO or disallow this
-  std::string node_path = path + "_" + std::to_string(*j0) + "_" +
-    std::to_string(*j1) + ".bin";
-  mat.load(node_path);
-#endif
-}
-#endif
-
 void
 load_mat(
   std::string const & path,
-  std::string const & dataset_name,
   arma::mat & mat,
-  opt_t<int> & j0,
-  opt_t<int> & j1,
-  opt_t<int> & n_cols)
+  opt_t<int> i0,
+  opt_t<int> i1)
 {
 #if USE_MPI
-  par_load_mat(path, dataset_name, mat, j0, j1, n_cols);
+  // TODO: this very probably doesn't work... will probably need to
+  // cook something up using MPI-IO or disallow this
+  std::string node_path = path + "_" + std::to_string(*i0) + "_" +
+    std::to_string(*i1) + ".bin";
+  mat.load(node_path);
 #else
-  (void) j0;
-  (void) j1;
-  (void) n_cols;
-  mat.load(arma::hdf5_name(path, dataset_name));
+  mat.load(path);
 #endif
 }
 
-#if USE_MPI
-void
-par_save_mat(
-  std::string const & path,
-  std::string const & dataset_name,
-  arma::mat const & mat,
-  opt_t<int> n_cols,
-  opt_t<int> n_rows,
-  opt_t<int> j0,
-  opt_t<int> j1)
-{
-#if USE_HDF5
-  (void) j1; // TODO: not using j1 is a bug---fix this
-
-  hid_t file, dset, plist;
-  hid_t filespace, memspace;
-  hsize_t filespace_dims[2];
-  hsize_t count[2], offset[2];
-
-  plist = H5Pcreate(H5P_FILE_ACCESS);
-  H5Pset_fapl_mpio(plist, comm, info);
-  file = H5Fcreate((path + ".h5").c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, plist);
-  H5Pclose(plist);
-
-  if (mat.is_vec()) {
-    filespace_dims[0] = *n_cols;
-  } else {
-    filespace_dims[0] = *n_cols;
-    filespace_dims[1] = *n_rows;
-  }
-
-  int rank = mat.is_vec() ? 1 : 2;
-
-  filespace = H5Screate_simple(rank, filespace_dims, nullptr);
-  dset = H5Dcreate(file, dataset_name.c_str(), H5T_IEEE_F64LE, filespace,
-                   H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-  H5Sclose(filespace);
-
-  if (mat.is_vec()) {
-    count[0] = mat.n_elem;
-  } else {
-    count[0] = mat.n_cols;
-    count[1] = mat.n_rows;
-  }
-
-  if (mat.is_vec()) {
-    offset[0] = *j0;
-  } else {
-    offset[0] = *j0;
-    offset[1] = 0;
-  }
-
-  memspace = H5Screate_simple(rank, count, nullptr);
-
-  filespace = H5Dget_space(dset);
-  H5Sselect_hyperslab(filespace, H5S_SELECT_SET, offset, nullptr, count, nullptr);
-
-  plist = H5Pcreate(H5P_DATASET_XFER);
-  H5Pset_dxpl_mpio(plist, H5FD_MPIO_COLLECTIVE);
-  H5Dwrite(dset, H5T_IEEE_F64LE, memspace, filespace, plist, &mat(0));
-  H5Pclose(plist);
-
-  H5Dclose(dset);
-  H5Sclose(filespace);
-  H5Sclose(memspace);
-
-  H5Fclose(file);
-#else
-  (void) dataset_name;
-  (void) n_rows;
-  (void) n_cols;
-
-  std::string node_path = path + "_" + std::to_string(*j0) + "_" +
-    std::to_string(*j1) + ".bin";
-  mat.save(node_path);
-#endif
-}
-#endif
-
-/**
- * path: path to hdf5 file into which to write
- * dataset_name: name of new dataset
- * mat: the Armadillo matrix that will be written to `dataset_name' in
- *      `path'
- * n_cols: number of columns(Arma)/rows(HDF5) in HDF5 file dataset
- * n_rows: number of rows(Arma)/columns(HDF5) in HDF5 file dataset
- * j0: column(Arma)/row(HDF5) offset into HDF5 file dataset---used by MPI
- */
 void
 save_mat(
   std::string const & path,
-  std::string const & dataset_name,
   arma::mat const & mat,
-  opt_t<int> n_cols,
-  opt_t<int> n_rows,
-  opt_t<int> j0,
-  opt_t<int> j1)
+  opt_t<int> i0,
+  opt_t<int> i1)
 {
 #if USE_MPI
-  par_save_mat(path, dataset_name, mat, n_cols, n_rows, j0, j1);
+  std::string node_path = path + "_" + std::to_string(*i0) + "_" +
+    std::to_string(*i1) + ".bin";
+  mat.save(node_path);
 #else
-  (void) n_cols;
-  (void) n_rows;
-  (void) j0;
-  (void) j1;
-  mat.save(arma::hdf5_name(path + ".h5", dataset_name));
+  (void) i0;
+  (void) i1;
+  mat.save(path + ".bin");
 #endif
 }
 
@@ -309,9 +134,9 @@ struct job_params {
 };
 
 #if USE_MPI
-void set_j0_and_j1(int num_faces, opt_t<int> & j0, opt_t<int> & j1) {
-  j0 = (static_cast<double>(mpi_rank)/mpi_size)*num_faces;
-  j1 = (static_cast<double>(mpi_rank + 1)/mpi_size)*num_faces;
+void set_i0_and_i1(int num_faces, opt_t<int> & i0, opt_t<int> & i1) {
+  i0 = (static_cast<double>(mpi_rank)/mpi_size)*num_faces;
+  i1 = (static_cast<double>(mpi_rank + 1)/mpi_size)*num_faces;
 }
 #endif
 
@@ -319,40 +144,34 @@ void do_visibility_task(job_params & params, illum_context & context) {
   arma::sp_umat A, V;
   timed("- assembling A", [&] () { context.make_A(A, params.offset); });
   timed("- computing V", [&] () { compute_V(A, V); });
-  timed("- writing HDF5 files", [&] () {
-    write_csc_inds(V, "V");
-  });
+  timed("- writing files", [&] () { write_csc_inds(V, "V"); });
 }
 
 void do_horizons_task(job_params & params, illum_context & context) {
-  int nfaces = context.get_num_faces(), nphi = params.nphi;
-  opt_t<int> j0, j1;
+  int nfaces = context.get_num_faces();
+  opt_t<int> i0, i1;
 #if USE_MPI
-  set_j0_and_j1(nfaces, j0, j1);
+  set_i0_and_i1(nfaces, i0, i1);
 #endif
   arma::mat horizons;
   timed("- building horizon map", [&] () {
     context.make_horizons(
-      horizons, params.nphi, params.theta_eps, params.offset, j0, j1);
+      horizons, params.nphi, params.theta_eps, params.offset, i0, i1);
   });
   if (!params.output_file) {
-#if USE_HDF5
-    params.output_file = std::string("horizons.h5");
-#else
-    params.output_file = std::string("horizons.bin");
-#endif
+    params.output_file = std::string("horizons");
   }
   timed("- saving horizon map to " + *params.output_file, [&] () {
-    save_mat(*params.output_file, "horizons", horizons, nfaces, nphi, j0, j1);
+    save_mat(*params.output_file, horizons, i0, i1);
   });
 }
 
-void do_ratios_task(job_params & params, illum_context & context) {
+void do_direct_illum_task(job_params & params, illum_context & context) {
   int nfaces = context.get_num_faces();
-  opt_t<int> j0, j1, nhoriz;
+  opt_t<int> i0, i1, nhoriz;
 
 #if USE_MPI
-  set_j0_and_j1(nfaces, j0, j1);
+  set_i0_and_i1(nfaces, i0, i1);
 #endif
 
   /*
@@ -362,12 +181,12 @@ void do_ratios_task(job_params & params, illum_context & context) {
   if (params.horizon_file) {
     file_exists_or_die(*params.horizon_file);
     timed("- loading horizon map from " + *params.horizon_file, [&] () {
-      load_mat(*params.horizon_file, "horizons", horizons, j0, j1, nhoriz);
+      load_mat(*params.horizon_file, horizons, i0, i1);
     });
   } else {
     timed("- building horizon map", [&] () {
       context.make_horizons(
-        horizons, params.nphi, params.theta_eps, params.offset, j0, j1);
+        horizons, params.nphi, params.theta_eps, params.offset, i0, i1);
     });
     nhoriz = nfaces;
   }
@@ -391,28 +210,43 @@ void do_ratios_task(job_params & params, illum_context & context) {
 
   int nsunpos = sun_positions.n_cols;
 
-  arma::mat ratios(horizons.n_cols, nsunpos);
+  arma::mat direct(horizons.n_cols, nsunpos);
   arma::vec tmp(horizons.n_cols);
 
   for (int j = 0; j < nsunpos; ++j) {
     auto sun_pos = sun_positions.col(j);
 
-    timed("- computing ratios", [&] () {
-      context.compute_visibility_ratios(
-        horizons, sun_pos, disk_xy, tmp, constants::SUN_RADIUS, j0, j1);
+    timed("- computing direct illumination", [&] () {
+      context.get_direct_illum(
+        horizons, sun_pos, disk_xy, tmp, constants::SUN_RADIUS, i0, i1);
     });
 
-    ratios.col(j) = tmp;
+    direct.col(j) = tmp;
   }
 
-  timed("- saving ratios", [&] () {
-    save_mat("ratios", "ratios", ratios, nhoriz, nsunpos, j0, j1);
+  timed("- saving direct illumination", [&] () {
+    save_mat("direct", direct, i0, i1);
   });
 }
 
 int main(int argc, char * argv[])
 {
-  cxxopts::Options options("phobos_test", "Work in progress...");
+  std::set<std::string> tasks = {
+    "visibility",
+    "horizons",
+    "direct"
+  };
+
+  auto tasks_to_string = [&] () {
+    std::string s;
+    for (auto task: tasks) s += "  " + task + '\n';
+    return s;
+  };
+
+  cxxopts::Options options(
+    boost::filesystem::path {argv[0]}.filename().c_str(),
+    ("Available tasks:\n\n" + tasks_to_string()).c_str());
+
   options.add_options()
     ("h,help", "Display usage")
     ("t,task", "Task to do", cxxopts::value<std::string>())
@@ -432,6 +266,7 @@ int main(int argc, char * argv[])
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
     ("sun_pos_file", "File containing sun positions",
      cxxopts::value<std::string>());
+
   options.parse_positional({"task"});
 
   auto args = options.parse(argc, argv);
@@ -467,11 +302,6 @@ int main(int argc, char * argv[])
   /**
    * Check that the task that the user request is valid.
    */
-  std::set<std::string> tasks = {
-    "visibility",
-    "horizons",
-    "ratios"
-  };
   if (tasks.find(task) == tasks.end()) {
     std::cout << options.help() << std::endl;
     std::exit(EXIT_FAILURE);
@@ -487,7 +317,7 @@ int main(int argc, char * argv[])
 
   if (task == "visibility") do_visibility_task(params, context);
   else if (task == "horizons") do_horizons_task(params, context);
-  else if (task == "ratios") do_ratios_task(params, context);
+  else if (task == "direct") do_direct_illum_task(params, context);
 
 #if USE_MPI
   MPI_Finalize();
