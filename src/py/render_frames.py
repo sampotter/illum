@@ -11,10 +11,10 @@ width = 1024
 height = 800
 
 ################################################################################
-# Load ratios
+# Load direct illumination data
 
 objpath = '../../data/SHAPE0_dec5000.obj'
-paths = glob.glob('../cpp/build/Release/ratios*.bin')
+paths = glob.glob('../cpp/build/Release/direct*.bin')
 nfiles = len(paths)
 
 i0s = np.zeros(nfiles, dtype=np.int)
@@ -33,7 +33,7 @@ with open(paths[0], 'rb') as f:
     _, nsunpos = map(int, f.readline().split())
 
 nfaces = max(i1s)
-ratios = np.zeros((nfaces, nsunpos), dtype=np.float64)
+direct_illum = np.zeros((nfaces, nsunpos), dtype=np.float64)
 
 for k, path in enumerate(paths):
     i0, i1 = i0s[k], i1s[k]
@@ -43,7 +43,7 @@ for k, path in enumerate(paths):
         assert(nrows == i1 - i0)
         assert(ncols == nsunpos)
         tmp = np.fromfile(f, dtype=np.float64)
-        ratios[i0:i1, :] = tmp.reshape(ncols, nrows).T
+        direct_illum[i0:i1, :] = tmp.reshape(ncols, nrows).T
 
 ################################################################################
 # load triangle mesh from OBJ file
@@ -52,7 +52,6 @@ tri = trimesh.load(objpath)
 nfaces = tri.faces.shape[0]
 V = tri.vertices[tri.faces]
 V = V.reshape(V.shape[0]*V.shape[1], V.shape[2])
-# C = ratios[:, 0]
 C = np.zeros(nfaces)
 tmp = np.column_stack([V, C.repeat(3)])
 vertex_data = tmp.astype(np.float32).tobytes()
@@ -101,13 +100,13 @@ views = [
     ('bottom', (0.0, 0.0, -zext), (0.0, 1.0, 0.0))
 ]
 
-for fr in range(ratios.shape[1]):
+for fr in range(direct_illum.shape[1]):
 
     print('- frame = %d' % fr)
 
     # buffer the color data for this frame
     vbo.write_chunks(
-        ratios[:, fr].repeat(3).astype(np.float32),
+        direct_illum[:, fr].repeat(3).astype(np.float32),
         3*nbytes,
         4*nbytes,
         3*nfaces)
