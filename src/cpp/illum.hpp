@@ -24,11 +24,10 @@ struct illum_context {
     opt_t<int> j0 = opt_t<int> {},
     opt_t<int> j1 = opt_t<int> {});
 
-  void get_direct_illum(
+  arma::vec get_direct_illum(
     arma::mat const & horizons,
     arma::vec const & sun_position,
     arma::mat const & disk_xy,
-    arma::vec & direct,
     double sun_radius,
     opt_t<int> j0,
     opt_t<int> j1);

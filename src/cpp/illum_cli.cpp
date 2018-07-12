@@ -211,17 +211,13 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
   int nsunpos = sun_positions.n_cols;
 
   arma::mat direct(horizons.n_cols, nsunpos);
-  arma::vec tmp(horizons.n_cols);
 
   for (int j = 0; j < nsunpos; ++j) {
-    auto sun_pos = sun_positions.col(j);
-
     timed("- computing direct illumination", [&] () {
-      context.get_direct_illum(
-        horizons, sun_pos, disk_xy, tmp, constants::SUN_RADIUS, i0, i1);
+      direct.col(j) = context.get_direct_illum(
+        horizons, sun_positions.col(j), disk_xy,
+        constants::SUN_RADIUS, i0, i1);
     });
-
-    direct.col(j) = tmp;
   }
 
   timed("- saving direct illumination", [&] () {

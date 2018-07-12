@@ -107,11 +107,10 @@ struct illum_context::impl
     opt_t<int> j0 = opt_t <int> {},
     opt_t<int> j1 = opt_t <int> {});
 
-  void get_direct_illum(
+  arma::vec get_direct_illum(
     arma::mat const & horizons,
     arma::vec const & sun_position,
     arma::mat const & disk_xy,
-    arma::vec & direct,
     double sun_radius,
     opt_t<int> const & j0,
     opt_t<int> const & j1);
@@ -150,21 +149,19 @@ illum_context::make_horizons(
   pimpl->make_horizons(horizons, nphi, theta_eps, offset, j0, j1);
 }
 
-void
+arma::vec
 illum_context::get_direct_illum(
   arma::mat const & horizons,
   arma::vec const & sun_position,
   arma::mat const & disk_xy,
-  arma::vec & direct,
   double sun_radius,
   opt_t<int> j0,
   opt_t<int> j1)
 {
-  pimpl->get_direct_illum(
+  return pimpl->get_direct_illum(
     horizons,
     sun_position,
     disk_xy,
-    direct,
     sun_radius,
     j0,
     j1);
@@ -456,12 +453,11 @@ arma::vec::fixed<3> get_centroid(Object const * obj) {
   return {p[0], p[1], p[2]};
 }
 
-void
+arma::vec
 illum_context::impl::get_direct_illum(
   arma::mat const & horizons,
   arma::vec const & sun_position,
   arma::mat const & disk_XY,
-  arma::vec & direct,
   double sun_radius,
   opt_t<int> const & j0,
   opt_t<int> const & j1)
@@ -472,6 +468,8 @@ illum_context::impl::get_direct_illum(
 
   int nhoriz = j1.value_or(horizons.n_cols) - j0.value_or(0);
   assert(horizons.n_cols == nhoriz);
+
+  arma::vec direct;
   direct.set_size(nhoriz);
 
   auto nphi = horizons.n_rows;
@@ -536,6 +534,8 @@ illum_context::impl::get_direct_illum(
     compute_direct_illum(j);
   }
 #endif
+
+  return direct;
 }
 
 void fib_spiral(arma::mat & xy, int n)
