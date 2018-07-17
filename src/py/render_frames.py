@@ -51,6 +51,8 @@ def main(dipath, objpath, width, height, outpath, normalize):
     nfaces = tri.faces.shape[0]
     V = tri.vertices[tri.faces]
     V = V.reshape(V.shape[0]*V.shape[1], V.shape[2])
+    V = V@np.diag([1, -1, 1])
+    
     C = np.zeros(nfaces)
     tmp = np.column_stack([V, C.repeat(3)])
     vertex_data = tmp.astype(np.float32).tobytes()
@@ -91,12 +93,12 @@ def main(dipath, objpath, width, height, outpath, normalize):
     # Matrices and Uniforms
 
     views = [
-        ('right', (xext, 0.0, 0.0), (0.0, 0.0, 1.0)),
-        ('left', (-xext, 0.0, 0.0), (0.0, 0.0, 1.0)),
-        ('front', (0.0, yext, 0.0), (0.0, 0.0, 1.0)),
-        ('back', (0.0, -yext, 0.0), (0.0, 0.0, 1.0)),
-        ('top', (0.0, 0.0, zext), (0.0, 1.0, 0.0)),
-        ('bottom', (0.0, 0.0, -zext), (0.0, 1.0, 0.0))
+        ('near', (xext, 0.0, 0.0), (0.0, 0.0, -1.0)),
+        ('far', (-xext, 0.0, 0.0), (0.0, 0.0, -1.0)),
+        ('west', (0.0, yext, 0.0), (0.0, 0.0, -1.0)),
+        ('east', (0.0, -yext, 0.0), (0.0, 0.0, -1.0)),
+        ('north', (0.0, 0.0, -zext), (0.0, 1.0, 0.0)),
+        ('south', (0.0, 0.0, zext), (0.0, 1.0, 0.0))
     ]
 
     for fr in range(direct_illum.shape[1]):

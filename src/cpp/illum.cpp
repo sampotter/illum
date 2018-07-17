@@ -81,7 +81,14 @@ get_objects(
       n = -n;
     }
 
-    objects.push_back(new Tri(v0, v1, v2, n, i/3));
+    // auto const n = normalize(Vector3 {
+    //   N[3*i0.vertex_index] + N[3*i1.vertex_index] + N[3*i2.vertex_index],
+    //   N[3*i0.vertex_index + 1] + N[3*i1.vertex_index + 1] + N[3*i2.vertex_index + 1],
+    //   N[3*i0.vertex_index + 2] + N[3*i1.vertex_index + 2] + N[3*i2.vertex_index + 2]
+    // });
+
+    // objects.push_back(new Tri(v0, v1, v2, n, i/3));
+    objects.push_back(new Tri(v0/100., v1/100., v2/100., n, i/3));
   }
 
   return objects;
@@ -520,7 +527,10 @@ illum_context::impl::get_direct_illum(
     // Scale the direct illumination by the cosine between the normal
     // pointing towards the sun and the surface normal
     // (i.e. assume Lambertian---fine for thermal)
-    direct(dir_ind) *= arma::dot(N, BTN.col(2));
+    direct(dir_ind) *= fmax(0, arma::dot(N, BTN.col(2)));
+
+    assert(0 <= direct(dir_ind));
+    assert(direct(dir_ind) <= 1);
   };
 
 #if USE_TBB

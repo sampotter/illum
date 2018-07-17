@@ -134,6 +134,9 @@ struct job_params {
   double offset, theta_eps;
   int nphi;
   opt_t<std::string> output_file, horizon_file, sun_pos_file;
+
+  // TODO: should we use boost units for this eventually?
+  std::string sun_unit, mesh_unit;
 };
 
 #if USE_MPI
@@ -205,6 +208,11 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
     auto d_sun = 227390024000.; // m
     sun_positions.resize(3, 1);
     sun_positions.col(0) = d_sun*normalise(arma::randn<arma::vec>(3));
+  }
+
+  // Rescale the sun positions as necessary
+  if (params.sun_unit == "m") {
+    sun_positions /= 1000.;
   }
 
   arma::mat disk_xy;
@@ -284,7 +292,11 @@ int main(int argc, char * argv[])
     ("output_file", "Output file", cxxopts::value<std::string>())
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
     ("sun_pos_file", "File containing sun positions",
-     cxxopts::value<std::string>());
+     cxxopts::value<std::string>())
+    ("sun_unit", "Units used for sun positions",
+     cxxopts::value<std::string>()->default_value("m"))
+    ("mesh_unit", "Units used by OBJ file vertices",
+     cxxopts::value<std::string>()->default_value("km"));
 
   options.parse_positional({"task"});
 
@@ -316,6 +328,16 @@ int main(int argc, char * argv[])
   }
   if (args.count("sun_pos_file") != 0) {
     params.sun_pos_file = args["sun_pos_file"].as<std::string>();
+  }
+  params.sun_unit = args["sun_unit"].as<std::string>();
+  params.mesh_unit = args["mesh_unit"].as<std::string>();
+
+  assert(params.sun_unit == "m" || params.sun_unit == "km");
+  assert(params.mesh_unit == "m" || params.mesh_unit == "km");
+
+  if (params.mesh_unit == "m") {
+    std::cout << "TODO: mesh_unit == m isn't implemented yet" << std::endl;
+    std::exit(EXIT_FAILURE);
   }
 
   /**
