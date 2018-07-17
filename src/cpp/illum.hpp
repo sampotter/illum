@@ -4,11 +4,12 @@
 #include "config.hpp"
 
 #include <armadillo>
-#include <experimental/optional>
 #include <memory>
 
+#include <boost/optional.hpp>
+
 template <class T>
-using opt_t = std::experimental::optional<T>;
+using opt_t = boost::optional<T>;
 
 struct illum_context {
   illum_context(char const * path, int shape_index = 0);

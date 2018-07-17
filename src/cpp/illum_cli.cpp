@@ -10,10 +10,10 @@
 #include <vector>
 
 #include <boost/filesystem.hpp>
-#include <experimental/optional>
+#include <boost/optional.hpp>
 
 template <class T>
-using opt_t = std::experimental::optional<T>;
+using opt_t = boost::optional<T>;
 
 #include <cxxopts.hpp>
 

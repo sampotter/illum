@@ -96,7 +96,7 @@ target_link_libraries (illum_cli PRIVATE illum)
 if (USE_MPI)
   target_link_libraries (illum_cli PRIVATE ${MPI_LIBRARIES})
 endif ()
-target_compile_features (illum_cli PRIVATE cxx_std_17)
+target_compile_features (illum_cli PRIVATE cxx_std_14)
 
 if (USE_PLOTTER)
   add_executable (plotter)
