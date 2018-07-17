@@ -8,3 +8,9 @@ GTAGS
 .#*
 __pycache__
 misc
+auto
+*.aux
+*.bbl
+*.blg
+*.log
+*.pdf
