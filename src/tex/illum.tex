@@ -1,0 +1,56 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{cleveref}
+\usepackage{fullpage}
+
+\begin{document}
+
+\section{Radiosity Methods}
+
+\emph{Make an argument for using the radiosity method}:
+\begin{itemize}
+\item Radiosity methods fell out of favor \emph{because}...
+\item Ideal scenario:
+  \begin{itemize}
+  \item we don't have to deal with participating media
+  \item we actually are doing thermal modeling
+  \item the object that we're modeling is ``convex + craters'', so the
+    visibility matrix is sparse
+  \item we have an object and many point sources at infinity
+  \end{itemize}
+\end{itemize}
+
+An approach to solving the radiative transfer equation would be to
+discretize the integral equation and solve it using one of a variety
+of methods. Here are a few ideas and references:
+\begin{itemize}
+\item Nested dissection
+\item Hanrahan~\cite{hanrahan1991rapid}... Inspired by the fast
+  multipole method. Probably can't use without some modification
+\item Algebraic multigrid
+\end{itemize}
+
+Each of these uses a hierarchical approach in some way. We'll need a
+way of progressively decimating our meshes while keeping a mapping
+which will allow us to rapidly transfer from parent to child
+elements. It looks like CGAL has a way to do this (search ``surface
+mesh simplication''). There are a bunch of papers which implement this
+in one way or another~\cite{khodakovsky2000progressive}. It probably
+doesn't matter too much which approach we take. The key is that it's
+fast, simple to work with, and doesn't introduce significant error.
+
+\section{General Global Illumination}
+
+\emph{Using BRDFs...}
+
+\bibliographystyle{plain}
+\bibliography{illum}
+
+\end{document}
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:
