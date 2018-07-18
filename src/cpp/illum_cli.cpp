@@ -91,19 +91,19 @@ load_mat(
 
 void
 save_mat(
-  std::string const & path,
+  boost::filesystem::path const & path,
   arma::mat const & mat,
   opt_t<int> i0,
   opt_t<int> i1)
 {
 #if USE_MPI
-  std::string node_path = path + "_" + std::to_string(*i0) + "_" +
+  std::string path node_path = path.string() + "_" + std::to_string(*i0) + "_" +
     std::to_string(*i1) + ".bin";
   mat.save(node_path);
 #else
   (void) i0;
   (void) i1;
-  mat.save(path + ".bin");
+  mat.save(path.string() + ".bin");
 #endif
 }
 
@@ -133,7 +133,7 @@ void file_exists_or_die(std::string const & filename) {
 struct job_params {
   double offset, theta_eps;
   int nphi;
-  opt_t<std::string> output_file, horizon_file, sun_pos_file;
+  opt_t<std::string> output_dir, horizon_file, sun_pos_file;
 
   // TODO: should we use boost units for this eventually?
   std::string sun_unit, mesh_unit;
@@ -163,11 +163,12 @@ void do_horizons_task(job_params & params, illum_context & context) {
     context.make_horizons(
       horizons, params.nphi, params.theta_eps, params.offset, i0, i1);
   });
-  if (!params.output_file) {
-    params.output_file = std::string("horizons");
+  boost::filesystem::path output_path {"horizons"};
+  if (!params.output_dir) {
+    output_path = *params.output_dir/output_path;
   }
-  timed("- saving horizon map to " + *params.output_file, [&] () {
-    save_mat(*params.output_file, horizons, i0, i1);
+  timed("- saving horizon map to " + *params.output_dir, [&] () {
+    save_mat(output_path, horizons, i0, i1);
   });
 }
 
@@ -243,16 +244,19 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
     });
   }
 
+  boost::filesystem::path output_dir_path = params.output_dir ?
+    *params.output_dir : ".";
+
   timed("- saving direct illumination", [&] () {
-    save_mat("direct", direct, i0, i1);
+    save_mat(output_dir_path/"direct", direct, i0, i1);
   });
 
   timed("- saving average direct illumination", [&] () {
-    save_mat("avgdir", avgdir, i0, i1);
+    save_mat(output_dir_path/"avgdir", avgdir, i0, i1);
   });
 
   timed("- saving thermal", [&] () {
-    save_mat("thermal", therm.T.row(0).t(), i0, i1);
+    save_mat(output_dir_path/"thermal", therm.T.row(0).t(), i0, i1);
   });
 }
 
@@ -289,7 +293,7 @@ int main(int argc, char * argv[])
     ("n,nphi",
      "Number of phi values (linearly spaced in [0, 2pi])",
      cxxopts::value<int>()->default_value("361"))
-    ("output_file", "Output file", cxxopts::value<std::string>())
+    ("output_dir", "Output file", cxxopts::value<std::string>())
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
     ("sun_pos_file", "File containing sun positions",
      cxxopts::value<std::string>())
@@ -320,8 +324,8 @@ int main(int argc, char * argv[])
   params.offset = args["offset"].as<double>();
   params.theta_eps = args["eps"].as<double>();
   params.nphi = args["nphi"].as<int>();
-  if (args.count("output_file") != 0) {
-    params.output_file = args["output_file"].as<std::string>();
+  if (args.count("output_dir") != 0) {
+    params.output_dir = args["output_dir"].as<std::string>();
   }
   if (args.count("horizon_file") != 0) {
     params.horizon_file = args["horizon_file"].as<std::string>();
