@@ -6,7 +6,6 @@ enable_language (CXX Fortran)
 
 option (BUILD_PLOTTER "Build plotter" OFF)
 
-option (USE_HDF5 "Use HDF5 for reading and writing files" OFF)
 option (USE_MPI "Use MPI to distribute" OFF)
 option (USE_TBB "Use TBB to parallelize" OFF)
 
@@ -33,29 +32,7 @@ if (USE_TBB)
   add_subdirectory (tbb)
 endif ()
 
-# If we're building with MPI, we don't want Armadillo to find and link
-# HDF5 in its wrapper library. The reason for this is that we only use
-# HDF5 through Armadillo if we're running on a single node without MPI
-# (in which case, we access HDF5 through Armadillo for saving matrices
-# for ease of use and simplicity). If we use MPI, we use parallel HDF5
-# to read and write HDF5 files, which isn't supported by default when
-# using HDF5 through Armadillo. Armadillo also doesn't expose any way
-# of using parallel HDF5 through its interface (as far as I know). So,
-# we need to do things more manually with the HDF5 C API than we would
-# otherwise have to using Armadillo. This dichotomy repeats itself
-# elsewhere in this CMakeLists.txt file and in the C++ source code
-# itself.
-if (USE_MPI)
-  set (DETECT_HDF5 OFF CACHE BOOL "Should Armadillo detect and build HDF5")
-  find_package (HDF5 REQUIRED)
-  if (NOT ${HDF5_IS_PARALLEL})
-    message (FATAL_ERROR "Parallel HDF5 required for use with MPI")
-  endif ()
-else ()
-  set (ARMA_USE_HDF5 ON)
-endif ()
 add_subdirectory (armadillo)
-
 add_subdirectory (cxxopts)
 add_subdirectory (fastbvh)
 add_subdirectory (tinyobjloader)
@@ -81,8 +58,7 @@ target_compile_features (illum PRIVATE cxx_std_14)
 
 add_executable (illum_cli)
 target_compile_options (illum_cli PRIVATE -Wall -Wextra -Wpedantic -Werror)
-set_property (TARGET illum_cli PROPERTY BUILD_RPATH ${Boost_LIBRARY_DIRS}
-  ${HDF5_C_LIBRARY_DIRS})
+set_property (TARGET illum_cli PROPERTY BUILD_RPATH ${Boost_LIBRARY_DIRS})
 target_sources (illum_cli PUBLIC illum_cli.cpp)
 target_include_directories (illum_cli PRIVATE ${Boost_INCLUDE_DIR})
 target_include_directories (illum_cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
@@ -91,7 +67,6 @@ if (USE_MPI)
 endif ()
 target_link_libraries (illum_cli PRIVATE ${Boost_LIBRARIES})
 target_link_libraries (illum_cli PRIVATE cxxopts)
-target_link_libraries (illum_cli PRIVATE ${HDF5_LIBRARIES})
 target_link_libraries (illum_cli PRIVATE illum)
 if (USE_MPI)
   target_link_libraries (illum_cli PRIVATE ${MPI_LIBRARIES})
