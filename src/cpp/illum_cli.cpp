@@ -203,6 +203,9 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
     timed("- loading sun positions", [&] () {
       sun_positions.load(*params.sun_pos_file, arma::raw_ascii);
       sun_positions = sun_positions.t();
+      if (sun_positions.n_rows > 3) {
+        sun_positions.shed_rows(3, sun_positions.n_rows - 1);
+      }
     });
   } else {
     // A little test problem using made-up numbers
@@ -222,9 +225,10 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
   int nsunpos = sun_positions.n_cols;
 
   arma::mat direct(horizons.n_cols, nsunpos);
+  arma::mat therm(horizons.n_cols, nsunpos);
   arma::vec avgdir(direct.n_rows);
 
-  thermal_model therm {nfaces};
+  thermal_model therm_model {nfaces};
 
   for (int j = 0; j < nsunpos; ++j) {
     timed("- computing direct illumination", [&] () {
@@ -240,7 +244,8 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
     });
 
     timed("- stepping thermal model", [&] () {
-      therm.step(600., 586.2*direct.col(j));
+      therm.col(j) = therm_model.T.row(0).t();
+      therm_model.step(600., 586.2*direct.col(j));
     });
   }
 
@@ -251,12 +256,8 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
     save_mat(output_dir_path/"direct", direct, i0, i1);
   });
 
-  timed("- saving average direct illumination", [&] () {
-    save_mat(output_dir_path/"avgdir", avgdir, i0, i1);
-  });
-
   timed("- saving thermal", [&] () {
-    save_mat(output_dir_path/"thermal", therm.T.row(0).t(), i0, i1);
+    save_mat(output_dir_path/"thermal", therm, i0, i1);
   });
 }
 

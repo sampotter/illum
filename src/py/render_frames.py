@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 
 import argparse
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='TODO')
+    parser.add_argument('scalar_field_path', type=str)
+    parser.add_argument('obj_path', type=str)
+    parser.add_argument('-W', '--width', type=int, default=512)
+    parser.add_argument('-H', '--height', type=int, default=512)
+    parser.add_argument('-o', '--output_path', type=str, default='./tmp')
+    parser.add_argument('-s', '--start_frame', type=int, default=0)
+    parser.add_argument('-e', '--end_frame', type=int, default=-1)
+    parser.add_argument('-n', '--normalize', action='store_true')
+    args = parser.parse_args()
+
 import glob
 import moderngl
 import numpy as np
@@ -11,27 +24,41 @@ from moderngl.ext.obj import Obj
 from PIL import Image
 from pyrr import Matrix44
 
-def main(dipath, objpath, width, height, outpath, normalize):
+def check_if_using_mpi(paths):
+    path = paths[0]
+    parts = path.split('/')[-1].split('.')[0].split('_')
+    return len(parts) > 2 and all(s.isdigit() for s in parts[-2:])
+
+def main(dipath, objpath, width, height, outpath, start_frame,
+         end_frame, normalize):
     paths = glob.glob(dipath)
+
+    using_mpi = check_if_using_mpi(paths)
+
     nfiles = len(paths)
 
     i0s = np.zeros(nfiles, dtype=np.int)
     i1s = np.zeros(nfiles, dtype=np.int)
 
-    for k, path in enumerate(paths):
-        i0, i1 = map(int, path.split('/')[-1].split('.')[0].split('_')[1:3])
-        i0s[k] = i0
-        i1s[k] = i1
+    if using_mpi:
+        for k, path in enumerate(paths):
+            i0, i1 = map(int, path.split('/')[-1].split('.')[0].split('_')[1:3])
+            i0s[k] = i0
+            i1s[k] = i1
 
     assert(min(i0s) == 0)
 
     with open(paths[0], 'rb') as f:
         header = f.readline()
         assert(header[:4] == b'ARMA')
-        _, nsunpos = map(int, f.readline().split())
+        nfaces, nsunpos = map(int, f.readline().split())
+
+    if not using_mpi:
+        i0s[0] = 0
+        i1s[0] = nfaces
 
     nfaces = max(i1s)
-    direct_illum = np.zeros((nfaces, nsunpos), dtype=np.float64)
+    scalar_field = np.zeros((nfaces, nsunpos), dtype=np.float64)
 
     for k, path in enumerate(paths):
         i0, i1 = i0s[k], i1s[k]
@@ -41,11 +68,11 @@ def main(dipath, objpath, width, height, outpath, normalize):
             assert(nrows == i1 - i0)
             assert(ncols == nsunpos)
             tmp = np.fromfile(f, dtype=np.float64)
-            direct_illum[i0:i1, :] = tmp.reshape(ncols, nrows).T
+            scalar_field[i0:i1, :] = tmp.reshape(ncols, nrows).T
 
     if normalize:
-        direct_illum -= direct_illum.min()
-        direct_illum /= direct_illum.max()
+        scalar_field -= scalar_field.min()
+        scalar_field /= scalar_field.max()
 
     tri = trimesh.load(objpath)
     nfaces = tri.faces.shape[0]
@@ -101,13 +128,13 @@ def main(dipath, objpath, width, height, outpath, normalize):
         ('south', (0.0, 0.0, zext), (0.0, 1.0, 0.0))
     ]
 
-    for fr in range(direct_illum.shape[1]):
-
+    for fr in range(start_frame, end_frame):
+        fr %= nsunpos
         print('- frame = %d' % fr)
 
         # buffer the color data for this frame
         vbo.write_chunks(
-            direct_illum[:, fr].repeat(3).astype(np.float32),
+            scalar_field[:, fr].repeat(3).astype(np.float32),
             3*nbytes,
             4*nbytes,
             3*nfaces)
@@ -133,22 +160,13 @@ def main(dipath, objpath, width, height, outpath, normalize):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='TODO')
-
-    parser.add_argument('direct_illum_path', type=str)
-    parser.add_argument('obj_path', type=str)
-    parser.add_argument('-W', '--width', type=int, default=512)
-    parser.add_argument('-H', '--height', type=int, default=512)
-    parser.add_argument('-o', '--output_path', type=str, default='./tmp')
-    parser.add_argument('-n', '--normalize', action='store_true')
-
-    args = parser.parse_args()
-
-    dipath = args.direct_illum_path
+    dipath = args.scalar_field_path
     objpath = args.obj_path
     width = args.width
     height = args.height
     outpath = args.output_path
+    start_frame = args.start_frame
+    end_frame = args.end_frame
     normalize = args.normalize
 
     if os.path.exists(outpath):
@@ -157,4 +175,5 @@ if __name__ == '__main__':
     else:
         os.makedirs(outpath)
 
-    main(dipath, objpath, width, height, outpath, normalize)
+    main(dipath, objpath, width, height, outpath, start_frame,
+         end_frame, normalize)
