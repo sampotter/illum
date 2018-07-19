@@ -276,7 +276,8 @@ int main(int argc, char * argv[])
   };
 
   cxxopts::Options options(
-    boost::filesystem::path {argv[0]}.filename().c_str(),
+	// boost::filesystem::path {std::string(argv[0])}.filename().c_str(),
+    argv[0],
     ("Available tasks:\n\n" + tasks_to_string()).c_str());
 
   options.add_options()
