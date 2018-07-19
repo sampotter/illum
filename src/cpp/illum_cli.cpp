@@ -231,7 +231,11 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
   thermal_model therm_model {nfaces};
 
   for (int j = 0; j < nsunpos; ++j) {
-    timed("- computing direct illumination", [&] () {
+    std::string const frame_str {
+      std::to_string(j + 1) + "/" + std::to_string(nsunpos)
+    };
+
+    timed("- " + frame_str + ": computing direct illumination", [&] () {
       direct.col(j) = context.get_direct_illum(
         horizons, sun_positions.col(j), disk_xy,
         constants::SUN_RADIUS, i0, i1);
@@ -243,7 +247,7 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
       }
     });
 
-    timed("- stepping thermal model", [&] () {
+    timed("- " + frame_str + ": stepping thermal model", [&] () {
       therm.col(j) = therm_model.T.row(0).t();
       therm_model.step(600., 586.2*direct.col(j));
     });

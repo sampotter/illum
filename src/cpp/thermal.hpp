@@ -56,7 +56,6 @@ struct thermal_model {
         &F(i)          // heat flux at surface [W/m^2]
         );
     }
-    std::cout << T(0, 0) << ", " << F(0) << std::endl;
     Qprev = Q;
     t += dt;
   }

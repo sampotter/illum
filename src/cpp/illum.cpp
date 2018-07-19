@@ -264,8 +264,6 @@ illum_context::impl::make_A(arma::sp_umat & A, double offset)
 
   auto & inds = reducer.inds;
 
-  std::cout << inds.rowind.size() << ", " << inds.colptr.size() << std::endl;
-
   assert(inds.colptr.size() == num_faces + 1);
 
   A = arma::sp_umat {
