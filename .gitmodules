@@ -7,9 +7,6 @@
 [submodule "src/cpp/cxxopts"]
 	path = src/cpp/cxxopts
 	url = https://github.com/sampotter/cxxopts.git
-[submodule "src/cpp/tbb"]
-	path = src/cpp/tbb
-	url = https://github.com/wjakob/tbb.git
 [submodule "src/cpp/armadillo"]
 	path = src/cpp/armadillo
 	url = https://gitlab.com/sampotter/armadillo-code.git
