@@ -11,3 +11,6 @@
 	path = src/cpp/armadillo
 	url = https://gitlab.com/sampotter/armadillo-code.git
 	branch = 8.500.x
+[submodule "src/cpp/tbb"]
+	path = src/cpp/tbb
+	url = https://github.com/01org/tbb.git
