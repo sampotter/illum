@@ -237,7 +237,10 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
   // TODO: just temporarily constructing the kernel matrix here to try
   // this out...
 
-  arma::sp_mat F = context.compute_F();
+  arma::sp_mat F;
+  timed("- assembling form factor matrix", [&] () {
+    F = context.compute_F();
+  });
   assert(F.n_rows == static_cast<arma::uword>(nfaces));
   assert(F.n_cols == static_cast<arma::uword>(nfaces));
 

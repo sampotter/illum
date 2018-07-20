@@ -367,7 +367,11 @@ illum_context::impl::compute_F(double offset) {
       // Shoot a ray between the faces if they are (something *must*
       // be hit)
       Ray ray(q_j, normalize(p_i - q_j));
-      bvh.getIntersection(ray, &info, false);
+      if (!bvh.getIntersection(ray, &info, false)) {
+        // TODO: should probably emit a warning here!
+        assert(info.object == nullptr);
+        continue;
+      }
 
       // Get the index of the triangle that was hit by the ray
       auto hit_index = static_cast<Tri const *>(info.object)->index;
