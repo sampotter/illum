@@ -9,6 +9,9 @@
 #include <string>
 #include <vector>
 
+#define ARMA_USE_SUPERLU 1
+#include <armadillo>
+
 #include <boost/filesystem.hpp>
 #include <boost/optional.hpp>
 
@@ -226,9 +229,19 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
 
   arma::mat direct(horizons.n_cols, nsunpos);
   arma::mat therm(horizons.n_cols, nsunpos);
+  arma::mat rad(horizons.n_cols, nsunpos);
   arma::vec avgdir(direct.n_rows);
 
   thermal_model therm_model {nfaces};
+
+  // TODO: just temporarily constructing the kernel matrix here to try
+  // this out...
+
+  arma::sp_mat F = context.compute_F();
+  assert(F.n_rows == static_cast<arma::uword>(nfaces));
+  assert(F.n_cols == static_cast<arma::uword>(nfaces));
+
+  arma::sp_mat K = arma::speye(nfaces, nfaces) - 0.12*F;
 
   for (int j = 0; j < nsunpos; ++j) {
     std::string const frame_str {
@@ -249,7 +262,16 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
 
     timed("- " + frame_str + ": stepping thermal model", [&] () {
       therm.col(j) = therm_model.T.row(0).t();
-      therm_model.step(600., 586.2*direct.col(j));
+
+      // TODO: what is 586.2 again?
+      // TODO: the sun is a parallel light source
+      arma::vec E = 586.2*direct.col(j);
+      arma::vec R = arma::spsolve(K, E, "superlu");
+
+      rad.col(j) = R;
+
+      // TODO: check that this is actually what we want to use here...
+      therm_model.step(600., R);
     });
   }
 
@@ -262,6 +284,10 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
 
   timed("- saving thermal", [&] () {
     save_mat(output_dir_path/"thermal", therm, i0, i1);
+  });
+
+  timed("- saving radiance", [&] () {
+    save_mat(output_dir_path/"rad", rad, i0, i1);
   });
 }
 

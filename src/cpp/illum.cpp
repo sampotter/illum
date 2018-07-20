@@ -105,6 +105,8 @@ struct illum_context::impl
 
   void make_A(arma::sp_umat & A, double offset);
 
+  arma::sp_mat compute_F(double offset = 1e-5);
+
   void make_horizons(
     arma::mat & horizons,
     int nphi = 361,
@@ -141,6 +143,12 @@ void
 illum_context::make_A(arma::sp_umat & A, double offset)
 {
   pimpl->make_A(A, offset);
+}
+
+arma::sp_mat
+illum_context::compute_F(double offset)
+{
+  return pimpl->compute_F(offset);
 }
 
 void
@@ -326,6 +334,126 @@ illum_context::impl::make_A(arma::sp_umat & A, double offset)
 #endif
 }
 
+arma::sp_mat
+illum_context::impl::compute_F(double offset) {
+  IntersectionInfo unused;
+
+#if USE_TBB
+
+  std::vector<sp_inds<arma::uword>> cols(num_faces);
+
+  auto const build_col = [this, offset, &cols] (size_t j) {
+    IntersectionInfo info;
+
+    auto tri_j = static_cast<Tri const *>(objects[j]);
+    auto p_j = tri_j->getCentroid();
+    auto n_j = tri_j->getNormal(info);
+    auto q_j = p_j + offset*n_j; // offset centroid = ray origin
+
+    auto & col = cols[j];
+    auto & rowind = col.rowind;
+    auto & colptr = col.colptr;
+
+    for (size_t i = 0; i < num_faces; ++i) {
+      auto tri_i = static_cast<Tri const *>(objects[i]);
+      auto p_i = tri_i->getCentroid();
+      auto r_i = tri_i->getBoundingRadius();
+
+      // Check if triangles are approximately "facing" each other
+      if ((p_i - p_j)*n_j <= -r_i) {
+        continue;
+      }
+
+      // Shoot a ray between the faces if they are (something *must*
+      // be hit)
+      Ray ray(q_j, normalize(p_i - q_j));
+      bvh.getIntersection(ray, &info, false);
+
+      // Get the index of the triangle that was hit by the ray
+      auto hit_index = static_cast<Tri const *>(info.object)->index;
+
+      // Search for the triangle that was hit and insert it (in sorted
+      // order) if it's a new visible triangle
+      auto lb = std::lower_bound(rowind.begin(), rowind.end(), hit_index);
+      if (lb == rowind.end() || *lb != static_cast<size_t>(tri_i->index)) {
+        rowind.insert(lb, hit_index);
+      }
+    }
+
+    colptr.push_back(0);
+    colptr.push_back(rowind.size());
+  };
+
+  tbb::parallel_for(size_t(0), num_faces, build_col);
+
+  join_horiz_reducer reducer;
+
+  tbb::parallel_reduce(
+    join_horiz_reducer::blocked_range_type {cols.begin(), cols.end()},
+    reducer);
+
+  auto & inds = reducer.inds;
+
+  assert(inds.colptr.size() == num_faces + 1);
+
+  // Now, compute form factors
+  // 
+  // TODO: we're not doing this as efficiently as we could be: we're
+  // recomputing dot products, etc. ... but this is just to get t
+
+  std::vector<double> form_factors;
+  form_factors.reserve(inds.rowind.size());
+
+  for (arma::uword j = 0; j < num_faces; ++j) {
+    auto ptr0 = inds.colptr[j];
+    auto ptr1 = inds.colptr[j + 1];
+
+    auto T_j = static_cast<Tri const *>(objects[j]);
+    auto p_j = T_j->getCentroid();
+    auto n_j = T_j->getNormal(unused);
+
+    double A_j = length((T_j->v1 - T_j->v0)^(T_j->v2 - T_j->v0))/2;
+    
+    for (arma::uword p = ptr0; p < ptr1; ++p) {
+      arma::uword i = inds.rowind[p];
+
+      if (i == j) {
+        form_factors.push_back(0);
+        continue;
+      }
+
+      auto T_i = static_cast<Tri const *>(objects[i]);
+      auto p_i = T_i->getCentroid();
+      auto n_i = T_i->getNormal(unused);
+
+      auto p_ij = p_i - p_j;
+      double r_ij = length(p_ij);
+      auto n_ij = p_ij/r_ij;
+
+      double mu_ij = fmax(0, n_i*n_ij);
+      double mu_ji = fmax(0, -n_j*n_ij);
+
+      double F_ij = mu_ij*mu_ji*A_j/(arma::datum::pi*r_ij*r_ij);
+
+      form_factors.push_back(F_ij);
+    }
+  }
+
+  assert(form_factors.size() == inds.rowind.size());
+
+  return arma::sp_mat {
+    arma::uvec(inds.rowind),
+    arma::uvec(inds.colptr),
+    arma::vec(form_factors),
+    num_faces,
+    num_faces
+  };
+
+#else
+#  error "Not implemented yet"
+#endif
+}
+
 /**
  * Compute Frenet frame for triangle. The convention is that the
  * (n)ormal is just the normal attached to the triangle, the (t)angent
@@ -487,7 +615,8 @@ illum_context::impl::get_direct_illum(
 
     vec::fixed<3> N = normalise(sun_position - p);
     vec::fixed<3> T = normalise((eye(3, 3) - N*N.t())*randn<vec>(3));
-    vec::fixed<3> B = cross(T, N);
+    vec::fixed<3> B = cross
+      (T, N);
 
     mat disk(3, disk_XY.n_rows);
     for (size_t j = 0; j < disk_XY.n_rows; ++j) {
