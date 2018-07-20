@@ -1,16 +1,43 @@
+** Obtaining the sources
+
+   When cloning this repository, make sure to update and initialize
+   the submodules that it depends on, as well.
+   #+BEGIN_SRC sh
+   git clone <this-repository>
+   cd illum
+   git submodule update --init
+   #+END_SRC
+
 ** Compiling
 
    The C++ sources are all in ~src/cpp~, and the build system is
-   CMake. To build to command-line programs, it's best to do an
+   CMake. To build the command-line programs, it's best to do an
    out-of-source build using CMake; i.e., to have CMake build and
    store temporary files in a directory different from ~src/cpp~. This
    can be any directory.
 
    To compile using the directory ~build~ for an out-of-source build,
    run:
-#+BEGIN_SRC sh
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DUSE_TBB=ON ../src/cpp
-make -j 4
-#+END_SRC
+   #+BEGIN_SRC sh
+   mkdir build
+   cd build
+   cmake -DCMAKE_BUILD_TYPE=Release -DUSE_TBB=ON ../src/cpp
+   make -j 4
+   #+END_SRC
+   There are a variety of build options. To see what these are, run
+   ~cmake -L~. They can be set in the same way that ~USE_TBB~ is set
+   in the example above. For example, to use MPI, add the flag
+   ~-DUSE_MPI=ON~ to the ~cmake~ line.
+
+** Running
+   
+   After building, there will be an executable ~illum_cli~ in
+   ~build~. Run ~./illum_cli -h~ or ~./illum_cli --help~ to see how to
+   use it.
+
+** Utility scripts
+
+   There is a collection of a support Python scripts for processing
+   and visualizing the output of ~illum_cli~ in ~src/py~. Each of
+   these scripts has command-line help built in. You can also view the
+   README in ~src/py~ for general information.
