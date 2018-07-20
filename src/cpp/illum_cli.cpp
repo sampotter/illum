@@ -167,7 +167,7 @@ void do_horizons_task(job_params & params, illum_context & context) {
       horizons, params.nphi, params.theta_eps, params.offset, i0, i1);
   });
   boost::filesystem::path output_path {"horizons"};
-  if (!params.output_dir) {
+  if (params.output_dir) {
     output_path = *params.output_dir/output_path;
   }
   timed("- saving horizon map to " + *params.output_dir, [&] () {
