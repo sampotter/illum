@@ -4,6 +4,7 @@
 
 #include <config.hpp>
 
+#include "arma_util.hpp"
 #include "sp_inds.hpp"
 
 #include <fastbvh>
@@ -108,15 +109,23 @@ struct illum_context::impl
   arma::sp_mat compute_F(double offset = 1e-5);
 
   void make_horizons(
-    arma::mat & horizons,
     int nphi = 361,
     double theta_eps = 1e-3,
     double offset = 1e-5,
     opt_t<int> j0 = opt_t <int> {},
     opt_t<int> j1 = opt_t <int> {});
 
+  void save_horizons(
+    boost::filesystem::path const & path,
+    opt_t<int> i0,
+    opt_t<int> i1) const;
+
+  void load_horizons(
+    boost::filesystem::path const & path,
+    opt_t<int> i0,
+    opt_t<int> i1);
+  
   arma::vec get_direct_illum(
-    arma::mat const & horizons,
     arma::vec const & sun_position,
     arma::mat const & disk_xy,
     double sun_radius,
@@ -131,6 +140,7 @@ struct illum_context::impl
   std::vector<Object *> bvh_objects;
   BVH bvh;
   size_t num_faces;
+  arma::mat horizons;
 };
 
 illum_context::illum_context(char const * path, int shape_index):
@@ -153,19 +163,35 @@ illum_context::compute_F(double offset)
 
 void
 illum_context::make_horizons(
-  arma::mat & horizons,
   int nphi,
   double theta_eps,
   double offset,
   opt_t<int> j0,
   opt_t<int> j1)
 {
-  pimpl->make_horizons(horizons, nphi, theta_eps, offset, j0, j1);
+  pimpl->make_horizons(nphi, theta_eps, offset, j0, j1);
+}
+
+void
+illum_context::save_horizons(
+  boost::filesystem::path const & path,
+  opt_t<int> i0,
+  opt_t<int> i1) const
+{
+  pimpl->save_horizons(path, i0, i1);
+}
+
+void
+illum_context::load_horizons(
+  boost::filesystem::path const & path,
+  opt_t<int> i0,
+  opt_t<int> i1)
+{
+  pimpl->load_horizons(path, i0, i1);
 }
 
 arma::vec
 illum_context::get_direct_illum(
-  arma::mat const & horizons,
   arma::vec const & sun_position,
   arma::mat const & disk_xy,
   double sun_radius,
@@ -173,7 +199,6 @@ illum_context::get_direct_illum(
   opt_t<int> j1)
 {
   return pimpl->get_direct_illum(
-    horizons,
     sun_position,
     disk_xy,
     sun_radius,
@@ -507,7 +532,7 @@ trace_horizon(
   auto n = tri->getNormal(info);
   p = p + offset*n;
 
-  auto F = get_frenet_frame(tri);
+  arma::mat::fixed<3, 3> F = get_frenet_frame(tri);
 
   auto const get_ray_d = [&] (double ph, double th) {
     arma::vec v(3);
@@ -547,7 +572,6 @@ trace_horizon(
 
 void
 illum_context::impl::make_horizons(
-  arma::mat & horizons,
   int nphi,
   double theta_eps,
   double offset,
@@ -577,6 +601,24 @@ illum_context::impl::make_horizons(
 }
 
 void
+illum_context::impl::save_horizons(
+  boost::filesystem::path const & path,
+  opt_t<int> i0,
+  opt_t<int> i1) const
+{
+  arma_util::save_mat(horizons, path, i0, i1);
+}
+
+void
+illum_context::impl::load_horizons(
+  boost::filesystem::path const & path,
+  opt_t<int> i0,
+  opt_t<int> i1)
+{
+  horizons = arma_util::load_mat(path, i0, i1);
+}
+
+void
 compute_V(
   arma::sp_umat const & A,
   arma::sp_umat & V)
@@ -591,7 +633,6 @@ arma::vec::fixed<3> get_centroid(Object const * obj) {
 
 arma::vec
 illum_context::impl::get_direct_illum(
-  arma::mat const & horizons,
   arma::vec const & sun_position,
   arma::mat const & disk_XY,
   double sun_radius,
@@ -635,7 +676,8 @@ illum_context::impl::get_direct_illum(
     int count = 0;
 
     for (size_t j = 0; j < disk_XY.n_rows - 1; ++j) {
-      vec::fixed<3> dir = BTN.t()*normalise(disk.col(j) - p);
+      vec::fixed<3> n_sun = normalise(disk.col(j) - p);
+      vec::fixed<3> dir = BTN.t()*n_sun;
 
       auto theta = std::acos(dir(2));
       auto phi = std::atan2(dir(1), dir(0));

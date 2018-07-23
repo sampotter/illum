@@ -1,27 +1,8 @@
-#include <algorithm>
-#include <cassert>
-#include <cmath>
-#include <cstring>
-#include <fstream>
-#include <functional>
-#include <iostream>
-#include <set>
-#include <string>
-#include <vector>
-
-#define ARMA_USE_SUPERLU 1
-#include <armadillo>
-
-#include <boost/filesystem.hpp>
-#include <boost/optional.hpp>
-
-template <class T>
-using opt_t = boost::optional<T>;
+#include "common.hpp"
 
 #include <cxxopts.hpp>
 
-#include <config.hpp>
-
+#include "arma_util.hpp"
 #include "constants.hpp"
 #include "illum.hpp"
 #include "thermal.hpp"
@@ -72,44 +53,6 @@ void write_coo(arma::sp_umat const & S, const char * path) {
   f.close();
 }
 
-void
-load_mat(
-  std::string const & path,
-  arma::mat & mat,
-  opt_t<int> i0,
-  opt_t<int> i1)
-{
-#if USE_MPI
-  // TODO: this very probably doesn't work... will probably need to
-  // cook something up using MPI-IO or disallow this
-  std::string node_path = path + "_" + std::to_string(*i0) + "_" +
-    std::to_string(*i1) + ".bin";
-  mat.load(node_path);
-#else
-  (void) i0;
-  (void) i1;
-  mat.load(path);
-#endif
-}
-
-void
-save_mat(
-  boost::filesystem::path const & path,
-  arma::mat const & mat,
-  opt_t<int> i0,
-  opt_t<int> i1)
-{
-#if USE_MPI
-  std::string path node_path = path.string() + "_" + std::to_string(*i0) + "_" +
-    std::to_string(*i1) + ".bin";
-  mat.save(node_path);
-#else
-  (void) i0;
-  (void) i1;
-  mat.save(path.string() + ".bin");
-#endif
-}
-
 void usage(std::string const & argv0) {
   std::cout << "usage: " << argv0 << std::endl;
 }
@@ -137,6 +80,7 @@ struct job_params {
   double offset, theta_eps;
   int nphi;
   opt_t<std::string> output_dir, horizon_file, sun_pos_file;
+  bool do_radiosity;
 
   // TODO: should we use boost units for this eventually?
   std::string sun_unit, mesh_unit;
@@ -161,17 +105,15 @@ void do_horizons_task(job_params & params, illum_context & context) {
 #if USE_MPI
   set_i0_and_i1(context.get_num_faces(), i0, i1);
 #endif
-  arma::mat horizons;
   timed("- building horizon map", [&] () {
-    context.make_horizons(
-      horizons, params.nphi, params.theta_eps, params.offset, i0, i1);
+    context.make_horizons(params.nphi, params.theta_eps, params.offset, i0, i1);
   });
   boost::filesystem::path output_path {"horizons"};
   if (params.output_dir) {
     output_path = *params.output_dir/output_path;
   }
   timed("- saving horizon map" + *params.output_dir, [&] () {
-    save_mat(output_path, horizons, i0, i1);
+    context.save_horizons(output_path, i0, i1);
   });
 }
 
@@ -186,16 +128,15 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
   /*
    * Load or create a matrix containing the horizons.
    */
-  arma::mat horizons;
   if (params.horizon_file) {
     file_exists_or_die(*params.horizon_file);
     timed("- loading horizon map from " + *params.horizon_file, [&] () {
-      load_mat(*params.horizon_file, horizons, i0, i1);
+      // load_mat(*params.horizon_file, horizons, i0, i1);
+      context.load_horizons(*params.horizon_file, i0, i1);
     });
   } else {
     timed("- building horizon map", [&] () {
-      context.make_horizons(
-        horizons, params.nphi, params.theta_eps, params.offset, i0, i1);
+      context.make_horizons(params.nphi, params.theta_eps, params.offset, i0, i1);
     });
     nhoriz = nfaces;
   }
@@ -227,39 +168,32 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
 
   int nsunpos = sun_positions.n_cols;
 
-  arma::mat direct(horizons.n_cols, nsunpos);
-  arma::mat therm(horizons.n_cols, nsunpos);
-  arma::mat rad(horizons.n_cols, nsunpos);
-  arma::vec avgdir(direct.n_rows);
+  arma::mat direct(nfaces, nsunpos), rad(nfaces, nsunpos);
 
-  thermal_model therm_model {nfaces};
+  arma::sp_mat F, K;
 
-  // TODO: just temporarily constructing the kernel matrix here to try
-  // this out...
+  if (params.do_radiosity) {
+    timed("- assembling form factor matrix", [&] () {
+      F = context.compute_F();
+    });
 
-  arma::sp_mat F;
-  timed("- assembling form factor matrix", [&] () {
-    F = context.compute_F();
-  });
-  assert(F.n_rows == static_cast<arma::uword>(nfaces));
-  assert(F.n_cols == static_cast<arma::uword>(nfaces));
+    assert(F.n_rows == static_cast<arma::uword>(nfaces));
+    assert(F.n_cols == static_cast<arma::uword>(nfaces));
 
-  timed("- writing form factor matrix", [&] () {
-    // TODO: not totally sure if syncing is necessary---see warnings
-    // in SpMat_bones.hpp
-    F.sync();
+    timed("- writing form factor matrix", [&] () {
+      // TODO: not totally sure if syncing is necessary---see warnings
+      // in SpMat_bones.hpp
+      F.sync();
+      arma::uvec {
+        F.row_indices, // ptr_aux_mem
+          F.n_nonzero    // number_of_elements
+          }.save("ff_rowinds.bin");
+      arma::uvec {F.col_ptrs, F.n_cols + 1}.save("ff_colptrs.bin");
+      arma::vec {F.values, F.n_nonzero}.save("ff_values.bin");
+    });
 
-    arma::uvec {
-      F.row_indices, // ptr_aux_mem
-      F.n_nonzero    // number_of_elements
-    }.save("ff_rowinds.bin");
-
-    arma::uvec {F.col_ptrs, F.n_cols + 1}.save("ff_colptrs.bin");
-
-    arma::vec {F.values, F.n_nonzero}.save("ff_values.bin");
-  });
-
-  arma::sp_mat K = arma::speye(nfaces, nfaces) - 0.12*F;
+    K = arma::speye(nfaces, nfaces) - 0.12*F;
+  }
 
   for (int j = 0; j < nsunpos; ++j) {
     std::string const frame_str {
@@ -268,52 +202,156 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
 
     timed("- " + frame_str + ": computing direct illumination", [&] () {
       direct.col(j) = context.get_direct_illum(
-        horizons, sun_positions.col(j), disk_xy,
-        constants::SUN_RADIUS, i0, i1);
+        sun_positions.col(j), disk_xy, constants::SUN_RADIUS, i0, i1);
 
       // TODO: temporary---use actual formula here
       direct.col(j) *= 586.2;
-
-      if (j == 0) {
-        avgdir = direct.col(j);
-      } else {
-        avgdir += (direct.col(j) - avgdir)/(j + 1);
-      }
     });
 
-    timed("- " + frame_str + ": stepping thermal model", [&] () {
-      therm.col(j) = therm_model.T.row(0).t();
-      rad.col(j) = arma::spsolve(K, direct.col(j), "superlu");
-      therm_model.step(600., rad.col(j));
-    });
+    if (params.do_radiosity) {
+      timed("- " + frame_str + ": computing indirect illumination", [&] () {
+        rad.col(j) = arma::spsolve(K, direct.col(j), "superlu");
+      });
+    }
   }
 
   boost::filesystem::path output_dir_path = params.output_dir ?
     *params.output_dir : ".";
 
   timed("- saving direct illumination", [&] () {
-    save_mat(output_dir_path/"direct", direct, i0, i1);
+    arma_util::save_mat(direct, output_dir_path/"direct", i0, i1);
   });
+
+  if (params.do_radiosity) {
+    timed("- saving radiance", [&] () {
+      arma_util::save_mat(rad, output_dir_path/"rad", i0, i1);
+    });
+  }
+  
+  if (params.do_radiosity) {
+    timed("- saving 'rad - dir'", [&] () {
+      arma_util::save_mat(rad - direct, output_dir_path/"diff", i0, i1);
+    });
+  }
+}
+
+void do_thermal_task(job_params & params, illum_context & context) {
+  int nfaces = context.get_num_faces();
+  opt_t<int> i0, i1, nhoriz;
+
+#if USE_MPI
+  set_i0_and_i1(nfaces, i0, i1);
+#endif
+
+  /*
+   * Load or create a matrix containing the horizons.
+   */
+  if (params.horizon_file) {
+    file_exists_or_die(*params.horizon_file);
+    timed("- loading horizon map from " + *params.horizon_file, [&] () {
+      // load_mat(*params.horizon_file, horizons, i0, i1);
+      context.load_horizons(*params.horizon_file, i0, i1);
+    });
+  } else {
+    timed("- building horizon map", [&] () {
+      context.make_horizons(params.nphi, params.theta_eps, params.offset, i0, i1);
+    });
+    nhoriz = nfaces;
+  }
+
+  arma::mat sun_positions;
+  if (params.sun_pos_file) {
+    file_exists_or_die(*params.sun_pos_file);
+    timed("- loading sun positions", [&] () {
+      sun_positions.load(*params.sun_pos_file, arma::raw_ascii);
+      sun_positions = sun_positions.t();
+      if (sun_positions.n_rows > 3) {
+        sun_positions.shed_rows(3, sun_positions.n_rows - 1);
+      }
+    });
+  } else {
+    // A little test problem using made-up numbers
+    auto d_sun = 227390024000.; // m
+    sun_positions.resize(3, 1);
+    sun_positions.col(0) = d_sun*normalise(arma::randn<arma::vec>(3));
+  }
+
+  // Rescale the sun positions as necessary
+  if (params.sun_unit == "m") {
+    sun_positions /= 1000.;
+  }
+
+  arma::mat disk_xy;
+  fib_spiral(disk_xy, 100);
+
+  int nsunpos = sun_positions.n_cols;
+
+  arma::mat therm(nfaces, nsunpos);
+  thermal_model therm_model {nfaces};
+
+  arma::sp_mat F, K;
+
+  if (params.do_radiosity) {
+    timed("- assembling form factor matrix", [&] () {
+      F = context.compute_F();
+    });
+
+    assert(F.n_rows == static_cast<arma::uword>(nfaces));
+    assert(F.n_cols == static_cast<arma::uword>(nfaces));
+
+    timed("- writing form factor matrix", [&] () {
+      // TODO: not totally sure if syncing is necessary---see warnings
+      // in SpMat_bones.hpp
+      F.sync();
+      arma::uvec {
+        F.row_indices, // ptr_aux_mem
+          F.n_nonzero    // number_of_elements
+          }.save("ff_rowinds.bin");
+      arma::uvec {F.col_ptrs, F.n_cols + 1}.save("ff_colptrs.bin");
+      arma::vec {F.values, F.n_nonzero}.save("ff_values.bin");
+    });
+
+    K = arma::speye(nfaces, nfaces) - 0.12*F;
+  }
+
+  for (int j = 0; j < nsunpos; ++j) {
+    std::string const frame_str {
+      std::to_string(j + 1) + "/" + std::to_string(nsunpos)
+    };
+
+    arma::vec direct;
+
+    timed("- " + frame_str + ": computing direct illumination", [&] () {
+      direct = context.get_direct_illum(
+        sun_positions.col(j), disk_xy, constants::SUN_RADIUS, i0, i1);
+
+      // TODO: temporary---use actual formula here
+      direct *= 586.2;
+    });
+          
+    timed("- " + frame_str + ": stepping thermal model", [&] () {
+      therm.col(j) = therm_model.T.row(0).t();
+      if (params.do_radiosity) {
+        direct = arma::spsolve(K, direct, "superlu");
+      }
+      therm_model.step(600., direct);
+    });
+  }
+
+  boost::filesystem::path output_dir_path = params.output_dir ?
+    *params.output_dir : ".";
 
   timed("- saving thermal", [&] () {
-    save_mat(output_dir_path/"thermal", therm, i0, i1);
-  });
-
-  timed("- saving radiance", [&] () {
-    save_mat(output_dir_path/"rad", rad, i0, i1);
-  });
-
-  timed("- saving 'rad - dir'", [&] () {
-    save_mat(output_dir_path/"diff", rad - direct, i0, i1);
+    arma_util::save_mat(therm, output_dir_path/"thermal", i0, i1);
   });
 }
 
-int main(int argc, char * argv[])
-{
+int main(int argc, char * argv[]) {
   std::set<std::string> tasks = {
     "visibility",
     "horizons",
-    "direct"
+    "direct",
+    "thermal"
   };
 
   auto tasks_to_string = [&] () {
@@ -342,6 +380,9 @@ int main(int argc, char * argv[])
     ("n,nphi",
      "Number of phi values (linearly spaced in [0, 2pi])",
      cxxopts::value<int>()->default_value("361"))
+    ("r,radiosity",
+     "Compute radiosity in addition to direct illumination",
+     cxxopts::value<bool>()->default_value("false"))
     ("output_dir", "Output file", cxxopts::value<std::string>())
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
     ("sun_pos_file", "File containing sun positions",
@@ -373,6 +414,7 @@ int main(int argc, char * argv[])
   params.offset = args["offset"].as<double>();
   params.theta_eps = args["eps"].as<double>();
   params.nphi = args["nphi"].as<int>();
+  params.do_radiosity = args["radiosity"].as<bool>();
   if (args.count("output_dir") != 0) {
     params.output_dir = args["output_dir"].as<std::string>();
   }
@@ -412,6 +454,7 @@ int main(int argc, char * argv[])
   if (task == "visibility") do_visibility_task(params, context);
   else if (task == "horizons") do_horizons_task(params, context);
   else if (task == "direct") do_direct_illum_task(params, context);
+  else if (task == "thermal") do_thermal_task(params, context);
 
 #if USE_MPI
   MPI_Finalize();

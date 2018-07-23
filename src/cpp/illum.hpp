@@ -6,6 +6,7 @@
 #include <armadillo>
 #include <memory>
 
+#include <boost/filesystem.hpp>
 #include <boost/optional.hpp>
 
 template <class T>
@@ -20,15 +21,23 @@ struct illum_context {
   arma::sp_mat compute_F(double offset = 1e-5);
 
   void make_horizons(
-    arma::mat & horizons,
     int nphi = 361,
     double theta_eps = 1e-3,
     double offset = 1e-5,
     opt_t<int> j0 = opt_t<int> {},
     opt_t<int> j1 = opt_t<int> {});
 
+  void save_horizons(
+    boost::filesystem::path const & path,
+    opt_t<int> i0,
+    opt_t<int> i1) const;
+  
+  void load_horizons(
+    boost::filesystem::path const & path,
+    opt_t<int> i0,
+    opt_t<int> i1);
+  
   arma::vec get_direct_illum(
-    arma::mat const & horizons,
     arma::vec const & sun_position,
     arma::mat const & disk_xy,
     double sun_radius,
@@ -36,8 +45,6 @@ struct illum_context {
     opt_t<int> j1);
 
   int get_num_faces() const;
-
-  void render_ortho(arma::mat::fixed<4, 4> const & camera, arma::mat & out);
   
 private:
   struct impl;

@@ -20,7 +20,6 @@ import numpy as np
 import os
 import trimesh
 
-from moderngl.ext.obj import Obj
 from PIL import Image
 from pyrr import Matrix44
 
