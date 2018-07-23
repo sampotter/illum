@@ -8,6 +8,12 @@
    git submodule update --init
    #+END_SRC
 
+** Caveats
+   At the time this comment was written (7/23/18), there was a bug
+   with GCC 8 which was causing problems with Armadillo. If you try
+   compiling with GCC 8, you may encounter ~unused-but-set-variable~
+   warnings coming from ~glue_times_meat.hpp~ in the Armadillo
+   submodule.
 ** Compiling
 
    The C++ sources are all in ~src/cpp~, and the build system is
