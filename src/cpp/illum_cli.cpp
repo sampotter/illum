@@ -170,7 +170,7 @@ void do_horizons_task(job_params & params, illum_context & context) {
   if (params.output_dir) {
     output_path = *params.output_dir/output_path;
   }
-  timed("- saving horizon map to " + *params.output_dir, [&] () {
+  timed("- saving horizon map" + *params.output_dir, [&] () {
     save_mat(output_path, horizons, i0, i1);
   });
 }
