@@ -430,7 +430,7 @@ illum_context::impl::compute_F(double offset) {
       auto p_i = T_i->getCentroid();
       auto n_i = T_i->getNormal(unused);
 
-      auto p_ij = p_i - p_j;
+      auto p_ij = p_j - p_i;
       double r_ij = length(p_ij);
       auto n_ij = p_ij/r_ij;
 
