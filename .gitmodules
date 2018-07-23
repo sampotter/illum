@@ -10,7 +10,3 @@
 [submodule "src/cpp/tbb"]
 	path = src/cpp/tbb
 	url = https://github.com/01org/tbb.git
-[submodule "src/cpp/armadillo"]
-	path = src/cpp/armadillo
-	url = https://gitlab.com/conradsnicta/armadillo-code
-	branch = 8.600.x
