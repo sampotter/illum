@@ -249,8 +249,6 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
     // in SpMat_bones.hpp
     F.sync();
 
-    arma::mat(F).save("ff_dense.bin");
-
     arma::uvec {
       F.row_indices, // ptr_aux_mem
       F.n_nonzero    // number_of_elements
