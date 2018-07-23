@@ -244,6 +244,23 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
   assert(F.n_rows == static_cast<arma::uword>(nfaces));
   assert(F.n_cols == static_cast<arma::uword>(nfaces));
 
+  timed("- writing form factor matrix", [&] () {
+    // TODO: not totally sure if syncing is necessary---see warnings
+    // in SpMat_bones.hpp
+    F.sync();
+
+    arma::mat(F).save("ff_dense.bin");
+
+    arma::uvec {
+      F.row_indices, // ptr_aux_mem
+      F.n_nonzero    // number_of_elements
+    }.save("ff_rowinds.bin");
+
+    arma::uvec {F.col_ptrs, F.n_cols + 1}.save("ff_colptrs.bin");
+
+    arma::vec {F.values, F.n_nonzero}.save("ff_values.bin");
+  });
+
   arma::sp_mat K = arma::speye(nfaces, nfaces) - 0.12*F;
 
   for (int j = 0; j < nsunpos; ++j) {
@@ -256,6 +273,9 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
         horizons, sun_positions.col(j), disk_xy,
         constants::SUN_RADIUS, i0, i1);
 
+      // TODO: temporary---use actual formula here
+      direct.col(j) *= 586.2;
+
       if (j == 0) {
         avgdir = direct.col(j);
       } else {
@@ -265,16 +285,8 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
 
     timed("- " + frame_str + ": stepping thermal model", [&] () {
       therm.col(j) = therm_model.T.row(0).t();
-
-      // TODO: what is 586.2 again?
-      // TODO: the sun is a parallel light source
-      arma::vec E = 586.2*direct.col(j);
-      arma::vec R = arma::spsolve(K, E, "superlu");
-
-      rad.col(j) = R;
-
-      // TODO: check that this is actually what we want to use here...
-      therm_model.step(600., R);
+      rad.col(j) = arma::spsolve(K, direct.col(j), "superlu");
+      therm_model.step(600., rad.col(j));
     });
   }
 
@@ -291,6 +303,10 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
 
   timed("- saving radiance", [&] () {
     save_mat(output_dir_path/"rad", rad, i0, i1);
+  });
+
+  timed("- saving 'rad - dir'", [&] () {
+    save_mat(output_dir_path/"diff", rad - direct, i0, i1);
   });
 }
 
