@@ -125,7 +125,7 @@ struct illum_context::impl
     opt_t<int> i0,
     opt_t<int> i1);
   
-  arma::vec get_direct_illum(
+  arma::vec get_direct_radiosity(
     arma::vec const & sun_position,
     arma::mat const & disk_xy,
     double sun_radius,
@@ -191,14 +191,14 @@ illum_context::load_horizons(
 }
 
 arma::vec
-illum_context::get_direct_illum(
+illum_context::get_direct_radiosity(
   arma::vec const & sun_position,
   arma::mat const & disk_xy,
   double sun_radius,
   opt_t<int> j0,
   opt_t<int> j1)
 {
-  return pimpl->get_direct_illum(
+  return pimpl->get_direct_radiosity(
     sun_position,
     disk_xy,
     sun_radius,
@@ -433,6 +433,8 @@ illum_context::impl::compute_F(double offset) {
   std::vector<double> form_factors;
   form_factors.reserve(inds.rowind.size());
 
+  double max_F = 0;
+
   for (arma::uword j = 0; j < num_faces; ++j) {
     auto ptr0 = inds.colptr[j];
     auto ptr1 = inds.colptr[j + 1];
@@ -464,9 +466,13 @@ illum_context::impl::compute_F(double offset) {
 
       double F_ij = mu_ij*mu_ji*A_j/(arma::datum::pi*r_ij*r_ij);
 
+      max_F = fmax(max_F, F_ij);
+
       form_factors.push_back(F_ij);
     }
   }
+
+  std::cout << "max(F) = " << max_F << std::endl;
 
   assert(form_factors.size() == inds.rowind.size());
 
@@ -632,7 +638,7 @@ arma::vec::fixed<3> get_centroid(Object const * obj) {
 }
 
 arma::vec
-illum_context::impl::get_direct_illum(
+illum_context::impl::get_direct_radiosity(
   arma::vec const & sun_position,
   arma::mat const & disk_XY,
   double sun_radius,
@@ -652,7 +658,7 @@ illum_context::impl::get_direct_illum(
   auto nphi = horizons.n_rows;
   auto delta_phi = TWO_PI/(nphi - 1);
 
-  auto const compute_direct_illum = [&] (int obj_ind) {
+  auto const compute_direct_radiosity = [&] (int obj_ind) {
     auto obj = objects[obj_ind];
     int dir_ind = obj_ind - j0.value_or(0);
 
@@ -710,10 +716,10 @@ illum_context::impl::get_direct_illum(
   tbb::parallel_for(
     size_t(j0.value_or(0)),
     size_t(j1.value_or(horizons.n_cols)),
-    compute_direct_illum);
+    compute_direct_radiosity);
 #else
   for (int j = j0.value_or(0); j < j1.value_or(horizons.n_cols); ++j) {
-    compute_direct_illum(j);
+    compute_direct_radiosity(j);
   }
 #endif
 

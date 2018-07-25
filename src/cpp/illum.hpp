@@ -37,7 +37,7 @@ struct illum_context {
     opt_t<int> i0,
     opt_t<int> i1);
   
-  arma::vec get_direct_illum(
+  arma::vec get_direct_radiosity(
     arma::vec const & sun_position,
     arma::mat const & disk_xy,
     double sun_radius,

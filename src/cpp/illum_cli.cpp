@@ -117,7 +117,7 @@ void do_horizons_task(job_params & params, illum_context & context) {
   });
 }
 
-void do_direct_illum_task(job_params & params, illum_context & context) {
+void do_radiosity_task(job_params & params, illum_context & context) {
   int nfaces = context.get_num_faces();
   opt_t<int> i0, i1, nhoriz;
 
@@ -175,6 +175,9 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
   if (params.do_radiosity) {
     timed("- assembling form factor matrix", [&] () {
       F = context.compute_F();
+
+      // TODO: temporary number for the albedo
+      F *= 0.12;
     });
 
     assert(F.n_rows == static_cast<arma::uword>(nfaces));
@@ -191,8 +194,6 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
       arma::uvec {F.col_ptrs, F.n_cols + 1}.save("ff_colptrs.bin");
       arma::vec {F.values, F.n_nonzero}.save("ff_values.bin");
     });
-
-    K = arma::speye(nfaces, nfaces) - 0.12*F;
   }
 
   for (int j = 0; j < nsunpos; ++j) {
@@ -200,8 +201,8 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
       std::to_string(j + 1) + "/" + std::to_string(nsunpos)
     };
 
-    timed("- " + frame_str + ": computing direct illumination", [&] () {
-      direct.col(j) = context.get_direct_illum(
+    timed("- " + frame_str + ": computing direct radiosity", [&] () {
+      direct.col(j) = context.get_direct_radiosity(
         sun_positions.col(j), disk_xy, constants::SUN_RADIUS, i0, i1);
 
       // TODO: temporary---use actual formula here
@@ -209,21 +210,30 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
     });
 
     if (params.do_radiosity) {
-      timed("- " + frame_str + ": computing indirect illumination", [&] () {
-        rad.col(j) = arma::spsolve(K, direct.col(j), "superlu");
-      });
+      arma::sp_mat L = arma::speye(nfaces, nfaces) - arma::trimatl(F);
+      arma::sp_mat U = -arma::trimatu(F);
+
+      arma::vec E = direct.col(j);
+      arma::vec B = arma::spsolve(L, E);
+      for (int iter = 0; iter < 3; ++iter) {
+        timed("  + doing Gauss-Seidel step [res = ", [&] () {
+          B = arma::spsolve(L, E - U*B);
+          double res = arma::norm(L*B + U*B - direct.col(j));
+          std::cout << res << "]";
+        });
+      };
     }
   }
 
   boost::filesystem::path output_dir_path = params.output_dir ?
     *params.output_dir : ".";
 
-  timed("- saving direct illumination", [&] () {
+  timed("- saving direct radiosity", [&] () {
     arma_util::save_mat(direct, output_dir_path/"direct", i0, i1);
   });
 
   if (params.do_radiosity) {
-    timed("- saving radiance", [&] () {
+    timed("- saving radiosity", [&] () {
       arma_util::save_mat(rad, output_dir_path/"rad", i0, i1);
     });
   }
@@ -305,8 +315,8 @@ void do_thermal_task(job_params & params, illum_context & context) {
       F.sync();
       arma::uvec {
         F.row_indices, // ptr_aux_mem
-          F.n_nonzero    // number_of_elements
-          }.save("ff_rowinds.bin");
+        F.n_nonzero    // number_of_elements
+      }.save("ff_rowinds.bin");
       arma::uvec {F.col_ptrs, F.n_cols + 1}.save("ff_colptrs.bin");
       arma::vec {F.values, F.n_nonzero}.save("ff_values.bin");
     });
@@ -321,8 +331,8 @@ void do_thermal_task(job_params & params, illum_context & context) {
 
     arma::vec direct;
 
-    timed("- " + frame_str + ": computing direct illumination", [&] () {
-      direct = context.get_direct_illum(
+    timed("- " + frame_str + ": computing direct radiosity", [&] () {
+      direct = context.get_direct_radiosity(
         sun_positions.col(j), disk_xy, constants::SUN_RADIUS, i0, i1);
 
       // TODO: temporary---use actual formula here
@@ -348,10 +358,10 @@ void do_thermal_task(job_params & params, illum_context & context) {
 
 int main(int argc, char * argv[]) {
   std::set<std::string> tasks = {
-    "visibility",
     "horizons",
-    "direct",
+    "radiosity",
     "thermal"
+    "visibility",
   };
 
   auto tasks_to_string = [&] () {
@@ -381,7 +391,7 @@ int main(int argc, char * argv[]) {
      "Number of phi values (linearly spaced in [0, 2pi])",
      cxxopts::value<int>()->default_value("361"))
     ("r,radiosity",
-     "Compute radiosity in addition to direct illumination",
+     "Compute scattered radiosity in addition to direct radiosity",
      cxxopts::value<bool>()->default_value("false"))
     ("output_dir", "Output file", cxxopts::value<std::string>())
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
@@ -451,10 +461,10 @@ int main(int argc, char * argv[]) {
 
   illum_context context {path.c_str(), shape_index};
 
-  if (task == "visibility") do_visibility_task(params, context);
-  else if (task == "horizons") do_horizons_task(params, context);
-  else if (task == "direct") do_direct_illum_task(params, context);
+  if (task == "horizons") do_horizons_task(params, context);
+  else if (task == "radiosity") do_radiosity_task(params, context);
   else if (task == "thermal") do_thermal_task(params, context);
+  else if (task == "visibility") do_visibility_task(params, context);
 
 #if USE_MPI
   MPI_Finalize();
