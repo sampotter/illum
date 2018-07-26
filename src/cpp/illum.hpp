@@ -1,16 +1,7 @@
 #ifndef __ILLUM_HPP__
 #define __ILLUM_HPP__
 
-#include "config.hpp"
-
-#include <armadillo>
-#include <memory>
-
-#include <boost/filesystem.hpp>
-#include <boost/optional.hpp>
-
-template <class T>
-using opt_t = boost::optional<T>;
+#include "common.hpp"
 
 struct illum_context {
   illum_context(char const * path, int shape_index = 0);

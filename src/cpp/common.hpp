@@ -10,12 +10,10 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
-
-#define ARMA_USE_SUPERLU 1
-#include <armadillo>
 
 #include <boost/filesystem.hpp>
 #include <boost/optional.hpp>
