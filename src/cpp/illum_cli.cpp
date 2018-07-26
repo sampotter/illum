@@ -78,9 +78,9 @@ void file_exists_or_die(std::string const & filename) {
 
 struct job_params {
   double offset, theta_eps;
-  int nphi;
+  int nphi, gs_steps;
   opt_t<std::string> output_dir, horizon_file, sun_pos_file;
-  bool do_radiosity;
+  bool do_radiosity, print_residual;
 
   // TODO: should we use boost units for this eventually?
   std::string sun_unit, mesh_unit;
@@ -178,21 +178,15 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
       // TODO: temporary number for the albedo
       F *= 0.12;
+
+      std::cout << " [nnz = " << F.n_nonzero << "]";
     });
 
     assert(F.n_rows == static_cast<arma::uword>(nfaces));
     assert(F.n_cols == static_cast<arma::uword>(nfaces));
 
     timed("- writing form factor matrix", [&] () {
-      // TODO: not totally sure if syncing is necessary---see warnings
-      // in SpMat_bones.hpp
-      F.sync();
-      arma::uvec {
-        F.row_indices, // ptr_aux_mem
-          F.n_nonzero    // number_of_elements
-          }.save("ff_rowinds.bin");
-      arma::uvec {F.col_ptrs, F.n_cols + 1}.save("ff_colptrs.bin");
-      arma::vec {F.values, F.n_nonzero}.save("ff_values.bin");
+      F.save("F.txt", arma::coord_ascii);
     });
   }
 
@@ -210,16 +204,18 @@ void do_radiosity_task(job_params & params, illum_context & context) {
     });
 
     if (params.do_radiosity) {
-      arma::sp_mat L = arma::speye(nfaces, nfaces) - arma::trimatl(F);
+      arma::sp_mat L_t = (arma::speye(nfaces, nfaces) - arma::trimatl(F)).t();
       arma::sp_mat U = -arma::trimatu(F);
 
       arma::vec E = direct.col(j);
-      arma::vec B = arma::spsolve(L, E);
-      for (int iter = 0; iter < 3; ++iter) {
-        timed("  + doing Gauss-Seidel step [res = ", [&] () {
-          B = arma::spsolve(L, E - U*B);
-          double res = arma::norm(L*B + U*B - direct.col(j));
-          std::cout << res << "]";
+      arma::vec B = arma_util::forward_solve(L_t, E);
+      for (int iter = 0; iter < params.gs_steps; ++iter) {
+        timed("  + doing Gauss-Seidel step", [&] () {
+          B = arma_util::forward_solve(L_t, E - U*B);
+          if (params.print_residual) {
+            double res = arma::norm((B.t()*L_t).t() + U*B - direct.col(j));
+            std::cout << " [res = " << res << "]";
+          }
         });
       };
     }
@@ -310,15 +306,7 @@ void do_thermal_task(job_params & params, illum_context & context) {
     assert(F.n_cols == static_cast<arma::uword>(nfaces));
 
     timed("- writing form factor matrix", [&] () {
-      // TODO: not totally sure if syncing is necessary---see warnings
-      // in SpMat_bones.hpp
-      F.sync();
-      arma::uvec {
-        F.row_indices, // ptr_aux_mem
-        F.n_nonzero    // number_of_elements
-      }.save("ff_rowinds.bin");
-      arma::uvec {F.col_ptrs, F.n_cols + 1}.save("ff_colptrs.bin");
-      arma::vec {F.values, F.n_nonzero}.save("ff_values.bin");
+      F.save("F.txt", arma::coord_ascii);
     });
 
     K = arma::speye(nfaces, nfaces) - 0.12*F;
@@ -360,7 +348,7 @@ int main(int argc, char * argv[]) {
   std::set<std::string> tasks = {
     "horizons",
     "radiosity",
-    "thermal"
+    "thermal",
     "visibility",
   };
 
@@ -393,6 +381,10 @@ int main(int argc, char * argv[]) {
     ("r,radiosity",
      "Compute scattered radiosity in addition to direct radiosity",
      cxxopts::value<bool>()->default_value("false"))
+    ("gs_steps", "Number of Gauss-Seidel steps used to compute scattered "
+     "radiosity", cxxopts::value<int>()->default_value("1"))
+    ("print_residual", "Print the residual at each step when computing the "
+     "scattered radiosity", cxxopts::value<bool>()->default_value("false"))
     ("output_dir", "Output file", cxxopts::value<std::string>())
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
     ("sun_pos_file", "File containing sun positions",
@@ -425,6 +417,8 @@ int main(int argc, char * argv[]) {
   params.theta_eps = args["eps"].as<double>();
   params.nphi = args["nphi"].as<int>();
   params.do_radiosity = args["radiosity"].as<bool>();
+  params.gs_steps = args["gs_steps"].as<int>();
+  params.print_residual = args["print_residual"].as<bool>();
   if (args.count("output_dir") != 0) {
     params.output_dir = args["output_dir"].as<std::string>();
   }

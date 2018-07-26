@@ -15,6 +15,7 @@
 #  include <tbb/tbb.h>
 #endif
 
+#include <algorithm>
 #include <unordered_map>
 #include <vector>
 
@@ -29,8 +30,16 @@ get_objects(
   tinyobj::attrib_t attrib;
   std::vector<tinyobj::shape_t> shapes;
   std::vector<tinyobj::material_t> materials;
+
   std::string err;
-  tinyobj::LoadObj(&attrib, &shapes, &materials, &err, path);
+  bool ret = tinyobj::LoadObj(&attrib, &shapes, &materials, &err, path);
+  if (!err.empty()) {
+    std::cerr << err << std::endl;
+  }
+  if (!ret) {
+    std::cerr << "Failed to load " << path << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
 
   /**
    * Build a vector of objects for use with our bounding volume
@@ -361,25 +370,26 @@ illum_context::impl::make_A(arma::sp_umat & A, double offset)
 
 arma::sp_mat
 illum_context::impl::compute_F(double offset) {
-  IntersectionInfo unused;
+  IntersectionInfo info;
 
-#if USE_TBB
+  std::vector<arma::uword> inds;
+  std::vector<double> values;
 
-  std::vector<sp_inds<arma::uword>> cols(num_faces);
-
-  auto const build_col = [this, offset, &cols] (size_t j) {
-    IntersectionInfo info;
-
+  for (arma::uword j = 0; j < num_faces; ++j) {
     auto tri_j = static_cast<Tri const *>(objects[j]);
     auto p_j = tri_j->getCentroid();
     auto n_j = tri_j->getNormal(info);
     auto q_j = p_j + offset*n_j; // offset centroid = ray origin
 
-    auto & col = cols[j];
-    auto & rowind = col.rowind;
-    auto & colptr = col.colptr;
+    std::vector<arma::uword> hits;
 
-    for (size_t i = 0; i < num_faces; ++i) {
+    // First, determine which faces are visible from the jth face
+
+    for (arma::uword i = 0; i < num_faces; ++i) {
+      if (i == j) {
+        continue;
+      }
+
       auto tri_i = static_cast<Tri const *>(objects[i]);
       auto p_i = tri_i->getCentroid();
       auto r_i = tri_i->getBoundingRadius();
@@ -399,63 +409,33 @@ illum_context::impl::compute_F(double offset) {
       }
 
       // Get the index of the triangle that was hit by the ray
-      auto hit_index = static_cast<Tri const *>(info.object)->index;
-
-      // Search for the triangle that was hit and insert it (in sorted
-      // order) if it's a new visible triangle
-      auto lb = std::lower_bound(rowind.begin(), rowind.end(), hit_index);
-      if (lb == rowind.end() || *lb != static_cast<size_t>(tri_i->index)) {
-        rowind.insert(lb, hit_index);
-      }
-    }
-
-    colptr.push_back(0);
-    colptr.push_back(rowind.size());
-  };
-
-  tbb::parallel_for(size_t(0), num_faces, build_col);
-
-  join_horiz_reducer reducer;
-
-  tbb::parallel_reduce(
-    join_horiz_reducer::blocked_range_type {cols.begin(), cols.end()},
-    reducer);
-
-  auto & inds = reducer.inds;
-
-  assert(inds.colptr.size() == num_faces + 1);
-
-  // Now, compute form factors
-  // 
-  // TODO: we're not doing this as efficiently as we could be: we're
-  // recomputing dot products, etc. ... but this is just to get t
-
-  std::vector<double> form_factors;
-  form_factors.reserve(inds.rowind.size());
-
-  double max_F = 0;
-
-  for (arma::uword j = 0; j < num_faces; ++j) {
-    auto ptr0 = inds.colptr[j];
-    auto ptr1 = inds.colptr[j + 1];
-
-    auto T_j = static_cast<Tri const *>(objects[j]);
-    auto p_j = T_j->getCentroid();
-    auto n_j = T_j->getNormal(unused);
-
-    double A_j = length((T_j->v1 - T_j->v0)^(T_j->v2 - T_j->v0))/2;
-    
-    for (arma::uword p = ptr0; p < ptr1; ++p) {
-      arma::uword i = inds.rowind[p];
-
-      if (i == j) {
-        form_factors.push_back(0);
+      arma::uword hit_index = static_cast<Tri const *>(info.object)->index;
+      if (hit_index == j) {
         continue;
       }
 
+      // Search for the triangle that was hit and insert it (in sorted
+      // order) if it's a new visible triangle
+      auto lb = std::lower_bound(hits.begin(), hits.end(), hit_index);
+      if (lb == hits.end()) {
+        hits.insert(lb, hit_index);
+      } else {
+        if (*lb != hit_index) {
+          hits.insert(lb, hit_index);
+        }
+      }
+    }
+
+    // Now, using the visibility information, compute the form factors
+    // to the jth face
+
+    auto T_j = static_cast<Tri const *>(objects[j]);
+    double A_j = length((T_j->v1 - T_j->v0)^(T_j->v2 - T_j->v0))/2;
+
+    for (auto i: hits) {
       auto T_i = static_cast<Tri const *>(objects[i]);
       auto p_i = T_i->getCentroid();
-      auto n_i = T_i->getNormal(unused);
+      auto n_i = T_i->getNormal(info);
 
       auto p_ij = p_j - p_i;
       double r_ij = length(p_ij);
@@ -466,27 +446,145 @@ illum_context::impl::compute_F(double offset) {
 
       double F_ij = mu_ij*mu_ji*A_j/(arma::datum::pi*r_ij*r_ij);
 
-      max_F = fmax(max_F, F_ij);
+      if (std::isnan(F_ij)) {
+        std::cout << "NAN" << std::endl;
+      }
 
-      form_factors.push_back(F_ij);
+      if (F_ij == 0) {
+        continue;
+      }
+
+      inds.push_back(i);
+      inds.push_back(j);
+      values.push_back(F_ij);
     }
   }
 
-  std::cout << "max(F) = " << max_F << std::endl;
+  arma::umat locations(inds);
+  locations.reshape(2, values.size());
 
-  assert(form_factors.size() == inds.rowind.size());
+  return arma::sp_mat(locations, arma::vec(values));
 
-  return arma::sp_mat {
-    arma::uvec(inds.rowind),
-    arma::uvec(inds.colptr),
-    arma::vec(form_factors),
-    num_faces,
-    num_faces
-  };
+// #if USE_TBB
 
-#else
-#  error "Not implemented yet"
-#endif
+//   std::vector<sp_inds<arma::uword>> cols(num_faces);
+
+//   auto const build_col = [this, offset, &cols] (size_t j) {
+//     IntersectionInfo info;
+
+//     auto tri_j = static_cast<Tri const *>(objects[j]);
+//     auto p_j = tri_j->getCentroid();
+//     auto n_j = tri_j->getNormal(info);
+//     auto q_j = p_j + offset*n_j; // offset centroid = ray origin
+
+//     auto & col = cols[j];
+//     auto & rowind = col.rowind;
+//     auto & colptr = col.colptr;
+
+//     for (size_t i = 0; i < num_faces; ++i) {
+//       auto tri_i = static_cast<Tri const *>(objects[i]);
+//       auto p_i = tri_i->getCentroid();
+//       auto r_i = tri_i->getBoundingRadius();
+
+//       // Check if triangles are approximately "facing" each other
+//       if ((p_i - p_j)*n_j <= -r_i) {
+//         continue;
+//       }
+
+//       // Shoot a ray between the faces if they are (something *must*
+//       // be hit)
+//       Ray ray(q_j, normalize(p_i - q_j));
+//       if (!bvh.getIntersection(ray, &info, false)) {
+//         // TODO: should probably emit a warning here!
+//         assert(info.object == nullptr);
+//         continue;
+//       }
+
+//       // Get the index of the triangle that was hit by the ray
+//       auto hit_index = static_cast<Tri const *>(info.object)->index;
+
+//       // Search for the triangle that was hit and insert it (in sorted
+//       // order) if it's a new visible triangle
+//       auto lb = std::lower_bound(rowind.begin(), rowind.end(), hit_index);
+//       if (lb == rowind.end() || *lb != static_cast<size_t>(tri_i->index)) {
+//         rowind.insert(lb, hit_index);
+//       }
+//     }
+
+//     colptr.push_back(0);
+//     colptr.push_back(rowind.size());
+//   };
+
+//   tbb::parallel_for(size_t(0), num_faces, build_col);
+
+//   join_horiz_reducer reducer;
+
+//   tbb::parallel_reduce(
+//     join_horiz_reducer::blocked_range_type {cols.begin(), cols.end()},
+//     reducer);
+
+//   auto & inds = reducer.inds;
+
+//   assert(inds.colptr.size() == num_faces + 1);
+
+//   // Now, compute form factors
+//   //
+//   // TODO: we're not doing this as efficiently as we could be: we're
+//   // recomputing dot products, etc. ... but this is just to get t
+
+//   std::vector<double> form_factors;
+//   form_factors.reserve(inds.rowind.size());
+
+//   for (arma::uword j = 0; j < num_faces; ++j) {
+//     auto ptr0 = inds.colptr[j];
+//     auto ptr1 = inds.colptr[j + 1];
+
+//     auto T_j = static_cast<Tri const *>(objects[j]);
+//     auto p_j = T_j->getCentroid();
+//     auto n_j = T_j->getNormal(unused);
+
+//     double A_j = length((T_j->v1 - T_j->v0)^(T_j->v2 - T_j->v0))/2;
+
+//     for (arma::uword p = ptr0; p < ptr1; ++p) {
+//       arma::uword i = inds.rowind[p];
+
+//       if (i == j) {
+//         form_factors.push_back(0);
+//         continue;
+//       }
+
+//       auto T_i = static_cast<Tri const *>(objects[i]);
+//       auto p_i = T_i->getCentroid();
+//       auto n_i = T_i->getNormal(unused);
+
+//       auto p_ij = p_j - p_i;
+//       double r_ij = length(p_ij);
+//       auto n_ij = p_ij/r_ij;
+
+//       double mu_ij = fmax(0, n_i*n_ij);
+//       double mu_ji = fmax(0, -n_j*n_ij);
+
+//       double F_ij = mu_ij*mu_ji*A_j/(arma::datum::pi*r_ij*r_ij);
+
+//       form_factors.push_back(F_ij);
+//     }
+//   }
+
+//   assert(form_factors.size() == inds.rowind.size());
+
+//   std::cout << "[max F = " << *std::max_element(form_factors.begin(), form_factors.end()) << "]" << std::endl;
+
+//   return arma::sp_mat {
+//     arma::uvec(inds.rowind),
+//     arma::uvec(inds.colptr),
+//     arma::vec(form_factors),
+//     num_faces,
+//     num_faces
+//   };
+
+// #else
+// #  error "Not implemented yet"
+// #endif
 }
 
 /**
