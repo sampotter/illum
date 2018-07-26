@@ -78,9 +78,9 @@ void file_exists_or_die(std::string const & filename) {
 
 struct job_params {
   double offset, theta_eps;
-  int nphi;
+  int nphi, gs_steps;
   opt_t<std::string> output_dir, horizon_file, sun_pos_file;
-  bool do_radiosity;
+  bool do_radiosity, print_residual;
 
   // TODO: should we use boost units for this eventually?
   std::string sun_unit, mesh_unit;
@@ -117,7 +117,7 @@ void do_horizons_task(job_params & params, illum_context & context) {
   });
 }
 
-void do_direct_illum_task(job_params & params, illum_context & context) {
+void do_radiosity_task(job_params & params, illum_context & context) {
   int nfaces = context.get_num_faces();
   opt_t<int> i0, i1, nhoriz;
 
@@ -175,24 +175,19 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
   if (params.do_radiosity) {
     timed("- assembling form factor matrix", [&] () {
       F = context.compute_F();
+
+      // TODO: temporary number for the albedo
+      F *= 0.12;
+
+      std::cout << " [nnz = " << F.n_nonzero << "]";
     });
 
     assert(F.n_rows == static_cast<arma::uword>(nfaces));
     assert(F.n_cols == static_cast<arma::uword>(nfaces));
 
     timed("- writing form factor matrix", [&] () {
-      // TODO: not totally sure if syncing is necessary---see warnings
-      // in SpMat_bones.hpp
-      F.sync();
-      arma::uvec {
-        F.row_indices, // ptr_aux_mem
-          F.n_nonzero    // number_of_elements
-          }.save("ff_rowinds.bin");
-      arma::uvec {F.col_ptrs, F.n_cols + 1}.save("ff_colptrs.bin");
-      arma::vec {F.values, F.n_nonzero}.save("ff_values.bin");
+      F.save("F.txt", arma::coord_ascii);
     });
-
-    K = arma::speye(nfaces, nfaces) - 0.12*F;
   }
 
   for (int j = 0; j < nsunpos; ++j) {
@@ -200,8 +195,8 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
       std::to_string(j + 1) + "/" + std::to_string(nsunpos)
     };
 
-    timed("- " + frame_str + ": computing direct illumination", [&] () {
-      direct.col(j) = context.get_direct_illum(
+    timed("- " + frame_str + ": computing direct radiosity", [&] () {
+      direct.col(j) = context.get_direct_radiosity(
         sun_positions.col(j), disk_xy, constants::SUN_RADIUS, i0, i1);
 
       // TODO: temporary---use actual formula here
@@ -209,21 +204,32 @@ void do_direct_illum_task(job_params & params, illum_context & context) {
     });
 
     if (params.do_radiosity) {
-      timed("- " + frame_str + ": computing indirect illumination", [&] () {
-        rad.col(j) = arma::spsolve(K, direct.col(j), "superlu");
-      });
+      arma::sp_mat L_t = (arma::speye(nfaces, nfaces) - arma::trimatl(F)).t();
+      arma::sp_mat U = -arma::trimatu(F);
+
+      arma::vec E = direct.col(j);
+      arma::vec B = arma_util::forward_solve(L_t, E);
+      for (int iter = 0; iter < params.gs_steps; ++iter) {
+        timed("  + doing Gauss-Seidel step", [&] () {
+          B = arma_util::forward_solve(L_t, E - U*B);
+          if (params.print_residual) {
+            double res = arma::norm((B.t()*L_t).t() + U*B - direct.col(j));
+            std::cout << " [res = " << res << "]";
+          }
+        });
+      };
     }
   }
 
   boost::filesystem::path output_dir_path = params.output_dir ?
     *params.output_dir : ".";
 
-  timed("- saving direct illumination", [&] () {
+  timed("- saving direct radiosity", [&] () {
     arma_util::save_mat(direct, output_dir_path/"direct", i0, i1);
   });
 
   if (params.do_radiosity) {
-    timed("- saving radiance", [&] () {
+    timed("- saving radiosity", [&] () {
       arma_util::save_mat(rad, output_dir_path/"rad", i0, i1);
     });
   }
@@ -300,15 +306,7 @@ void do_thermal_task(job_params & params, illum_context & context) {
     assert(F.n_cols == static_cast<arma::uword>(nfaces));
 
     timed("- writing form factor matrix", [&] () {
-      // TODO: not totally sure if syncing is necessary---see warnings
-      // in SpMat_bones.hpp
-      F.sync();
-      arma::uvec {
-        F.row_indices, // ptr_aux_mem
-          F.n_nonzero    // number_of_elements
-          }.save("ff_rowinds.bin");
-      arma::uvec {F.col_ptrs, F.n_cols + 1}.save("ff_colptrs.bin");
-      arma::vec {F.values, F.n_nonzero}.save("ff_values.bin");
+      F.save("F.txt", arma::coord_ascii);
     });
 
     K = arma::speye(nfaces, nfaces) - 0.12*F;
@@ -321,8 +319,8 @@ void do_thermal_task(job_params & params, illum_context & context) {
 
     arma::vec direct;
 
-    timed("- " + frame_str + ": computing direct illumination", [&] () {
-      direct = context.get_direct_illum(
+    timed("- " + frame_str + ": computing direct radiosity", [&] () {
+      direct = context.get_direct_radiosity(
         sun_positions.col(j), disk_xy, constants::SUN_RADIUS, i0, i1);
 
       // TODO: temporary---use actual formula here
@@ -348,10 +346,10 @@ void do_thermal_task(job_params & params, illum_context & context) {
 
 int main(int argc, char * argv[]) {
   std::set<std::string> tasks = {
-    "visibility",
     "horizons",
-    "direct",
-    "thermal"
+    "radiosity",
+    "thermal",
+    "visibility",
   };
 
   auto tasks_to_string = [&] () {
@@ -381,8 +379,12 @@ int main(int argc, char * argv[]) {
      "Number of phi values (linearly spaced in [0, 2pi])",
      cxxopts::value<int>()->default_value("361"))
     ("r,radiosity",
-     "Compute radiosity in addition to direct illumination",
+     "Compute scattered radiosity in addition to direct radiosity",
      cxxopts::value<bool>()->default_value("false"))
+    ("gs_steps", "Number of Gauss-Seidel steps used to compute scattered "
+     "radiosity", cxxopts::value<int>()->default_value("1"))
+    ("print_residual", "Print the residual at each step when computing the "
+     "scattered radiosity", cxxopts::value<bool>()->default_value("false"))
     ("output_dir", "Output file", cxxopts::value<std::string>())
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
     ("sun_pos_file", "File containing sun positions",
@@ -415,6 +417,8 @@ int main(int argc, char * argv[]) {
   params.theta_eps = args["eps"].as<double>();
   params.nphi = args["nphi"].as<int>();
   params.do_radiosity = args["radiosity"].as<bool>();
+  params.gs_steps = args["gs_steps"].as<int>();
+  params.print_residual = args["print_residual"].as<bool>();
   if (args.count("output_dir") != 0) {
     params.output_dir = args["output_dir"].as<std::string>();
   }
@@ -451,10 +455,10 @@ int main(int argc, char * argv[]) {
 
   illum_context context {path.c_str(), shape_index};
 
-  if (task == "visibility") do_visibility_task(params, context);
-  else if (task == "horizons") do_horizons_task(params, context);
-  else if (task == "direct") do_direct_illum_task(params, context);
+  if (task == "horizons") do_horizons_task(params, context);
+  else if (task == "radiosity") do_radiosity_task(params, context);
   else if (task == "thermal") do_thermal_task(params, context);
+  else if (task == "visibility") do_visibility_task(params, context);
 
 #if USE_MPI
   MPI_Finalize();
