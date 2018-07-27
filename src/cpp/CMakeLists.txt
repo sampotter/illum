@@ -4,8 +4,6 @@ project (illum)
 
 enable_language (CXX Fortran)
 
-option (BUILD_PLOTTER "Build plotter" OFF)
-
 option (USE_MPI "Use MPI to distribute" OFF)
 option (USE_TBB "Use TBB to parallelize" OFF)
 
@@ -16,12 +14,6 @@ if (COMPILER_SUPPORTS_MARCH_NATIVE)
 endif ()
 
 find_package (Boost 1.60 REQUIRED COMPONENTS system filesystem)
-
-if (BUILD_PLOTTER)
-  find_package (GLEW REQUIRED)
-  find_package (GLUT REQUIRED)
-  find_package (OpenGL REQUIRED)
-endif ()
 
 if (USE_MPI)
   find_package (MPI REQUIRED)
@@ -74,14 +66,3 @@ if (USE_MPI)
   target_link_libraries (illum_cli PRIVATE ${MPI_LIBRARIES})
 endif ()
 target_compile_features (illum_cli PRIVATE cxx_std_14)
-
-if (USE_PLOTTER)
-  add_executable (plotter)
-  target_sources (plotter PRIVATE plotter.cpp)
-  target_link_libraries (plotter PRIVATE ${GLEW_LIBRARIES})
-  target_link_libraries (plotter PRIVATE ${GLUT_glut_LIBRARY})
-  target_link_libraries (plotter PRIVATE ${OPENGL_gl_LIBRARY})
-  target_link_libraries (plotter PRIVATE tinyobjloader)
-  configure_file (graph.v.glsl graph.v.glsl COPYONLY)
-  configure_file (graph.f.glsl graph.f.glsl COPYONLY)
-endif ()
