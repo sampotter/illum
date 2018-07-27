@@ -4,6 +4,7 @@ project (illum)
 
 enable_language (CXX Fortran)
 
+option (BUILD_RENDERER "Build the command-line renderer" ON)
 option (USE_MPI "Use MPI to distribute" OFF)
 option (USE_TBB "Use TBB to parallelize" OFF)
 
@@ -14,6 +15,11 @@ if (COMPILER_SUPPORTS_MARCH_NATIVE)
 endif ()
 
 find_package (Boost 1.60 REQUIRED COMPONENTS system filesystem)
+
+if (BUILD_RENDERER)
+  find_library (pngpp_LIBRARY png++)
+  find_package (PNG REQUIRED)
+endif ()
 
 if (USE_MPI)
   find_package (MPI REQUIRED)
@@ -39,7 +45,8 @@ target_sources (conduction PRIVATE conductionT.f conductionQ.f tridag.for
 
 add_library (illum STATIC)
 target_compile_options (illum PRIVATE -Wall -Wextra -Wpedantic -Werror)
-target_sources (illum PRIVATE illum.cpp arma_util.cpp conduction.cpp)
+target_sources (illum PRIVATE illum.cpp arma_util.cpp conduction.cpp
+  obj_util.cpp)
 target_include_directories (illum PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries (illum PUBLIC armadillo)
 target_link_libraries (illum PRIVATE conduction)
@@ -66,3 +73,17 @@ if (USE_MPI)
   target_link_libraries (illum_cli PRIVATE ${MPI_LIBRARIES})
 endif ()
 target_compile_features (illum_cli PRIVATE cxx_std_14)
+
+add_executable (illum_renderer_cli)
+target_compile_options (illum_renderer_cli PRIVATE -Wall -Wextra -Wpedantic -Werror)
+set_property (TARGET illum_renderer_cli PROPERTY BUILD_RPATH ${Boost_LIBRARY_DIRS})
+target_sources (illum_renderer_cli PUBLIC illum_renderer_cli.cpp obj_util.cpp)
+target_include_directories (illum_renderer_cli PRIVATE ${Boost_INCLUDE_DIR})
+target_include_directories (illum_renderer_cli PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_link_libraries (illum_renderer_cli PRIVATE armadillo)
+target_link_libraries (illum_renderer_cli PRIVATE ${Boost_LIBRARIES})
+target_link_libraries (illum_renderer_cli PRIVATE cxxopts)
+target_link_libraries (illum_renderer_cli PRIVATE fastbvh)
+target_link_libraries (illum_renderer_cli PRIVATE ${PNG_LIBRARIES})
+target_link_libraries (illum_renderer_cli PRIVATE tinyobjloader)
+target_compile_features (illum_renderer_cli PRIVATE cxx_std_17)
