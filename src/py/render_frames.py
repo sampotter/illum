@@ -50,7 +50,13 @@ def main(dipath, objpath, width, height, outpath, start_frame,
     with open(paths[0], 'rb') as f:
         header = f.readline()
         assert(header[:4] == b'ARMA')
-        nfaces, nsunpos = map(int, f.readline().split())
+        dims = tuple(map(int, f.readline().split()))
+        if len(dims) == 1:
+            nfaces, nsunpos = dims[0], 1
+        elif len(dims) == 2:
+            nfaces, nsunpos = dims
+        else:
+            raise Exception('dims > 3 not yet handled')
 
     if not using_mpi:
         i0s[0] = 0
@@ -63,7 +69,13 @@ def main(dipath, objpath, width, height, outpath, start_frame,
         i0, i1 = i0s[k], i1s[k]
         with open(path, 'rb') as f:
             f.readline() # skip first line of header
-            nrows, ncols = map(int, f.readline().split())
+            dims = tuple(map(int, f.readline().split()))
+            if len(dims) == 1:
+                nrows, ncols = dims[0], 1
+            elif len(dims) == 2:
+                nrows, ncols = dims
+            else:
+                raise Exception('dims > 3 not yet handled')
             assert(nrows == i1 - i0)
             assert(ncols == nsunpos)
             tmp = np.fromfile(f, dtype=np.float64)
