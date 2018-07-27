@@ -1,0 +1,19 @@
+* Sections
+
+** Limitations
+
+* Figures to add
+
+  - average illumination of vesta (for the "discontinuous sun pos")
+  - scattered radiosity
+  - thermal: max, avg, and difference due to radiosity
+  - oscillatory figure
+
+* Todo
+
+  - add thermal emissivity
+  - try bootstrapping thermal model
+  - try G-S initialized from previous step
+  - try G-S initialized from upsampled result
+  - Southwell
+  - precompute mesh transfer data structure
