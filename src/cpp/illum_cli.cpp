@@ -123,6 +123,8 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
   int nsunpos = sun_positions.n_cols;
 
+  // TODO: once we know the radiosity method is working, we can delete
+  // "direct" and only save "rad"
   arma::mat direct(nfaces, nsunpos), rad(nfaces, nsunpos);
 
   arma::sp_mat F, K;
@@ -173,6 +175,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
           }
         });
       };
+      rad.col(j) = B;
     }
   }
 

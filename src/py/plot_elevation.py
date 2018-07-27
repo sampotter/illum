@@ -9,6 +9,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 import arma
+import colorcet as cc
 import matplotlib.pyplot as plt
 import matplotlib.tri as tri
 import numpy as np
@@ -22,21 +23,33 @@ if __name__ == '__main__':
 
     V = T.vertices
     V -= np.mean(V, 0)
+
+    # explain
+    F = T.faces
+    V = V[F].reshape(3*F.shape[0], 3)
+
     R = np.sqrt(np.sum(V**2, 1))
-    for i in range(3): V[:, i] /= R
+    V /= R.reshape(V.shape[0], 1)*np.ones((1, 3))
+
+    print(V.shape)
 
     Phi = np.arctan2(V[:, 1], V[:, 0])
-    Theta = np.arccos(V[:, 2])
+    Lon = np.degrees(Phi) + 180
 
-    F = arma.fromfile(args.scalar_field_path)
-    
-    # triang = tri.Triangulation(Phi, Theta, T.faces)
+    Theta = np.arccos(V[:, 2])
+    Lat = 90 - np.degrees(Theta)
+
+    data = arma.fromfile(args.scalar_field_path)
+    data = data.repeat(3)
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    m = Basemap(projection='ortho', lon_0=0, lat_0=0, resolution='l')
-    MC = m.contourf(np.degrees(Phi) + 180, 90 - np.degrees(Theta), F[:, 0], 10, ax=ax, tri=True, latlon=True)
-    m.drawparallels(np.arange(0,81,20))
-    m.drawmeridians(np.arange(-180,181,60))
+    # m = Basemap(projection='gnom', lon_0=90, lat_0=0,
+    #            llcrnrlon=45, llcrnrlat=-45, urcrnrlon=135, urcrnrlat=45,
+    #            resolution='l')
+    m = Basemap(projection='ortho', lon_0=165, lat_0=45)
+    m.pcolor(Lon, Lat, data, tri=True, latlon=True, cmap=cc.m_fire)
+    m.drawparallels(np.arange(-90,91,30))
+    m.drawmeridians(np.arange(-180,181,30))
+    m.colorbar()
     plt.show()
-     # fig.savefig('test.png')
