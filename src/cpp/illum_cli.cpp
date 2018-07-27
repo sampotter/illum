@@ -93,13 +93,6 @@ void set_i0_and_i1(int num_faces, opt_t<int> & i0, opt_t<int> & i1) {
 }
 #endif
 
-void do_visibility_task(job_params & params, illum_context & context) {
-  arma::sp_umat A, V;
-  timed("- assembling A", [&] () { context.make_A(A, params.offset); });
-  timed("- computing V", [&] () { compute_V(A, V); });
-  timed("- writing files", [&] () { write_csc_inds(V, "V"); });
-}
-
 void do_horizons_task(job_params & params, illum_context & context) {
   opt_t<int> i0, i1;
 #if USE_MPI
@@ -348,8 +341,7 @@ int main(int argc, char * argv[]) {
   std::set<std::string> tasks = {
     "horizons",
     "radiosity",
-    "thermal",
-    "visibility",
+    "thermal"
   };
 
   auto tasks_to_string = [&] () {
@@ -458,7 +450,6 @@ int main(int argc, char * argv[]) {
   if (task == "horizons") do_horizons_task(params, context);
   else if (task == "radiosity") do_radiosity_task(params, context);
   else if (task == "thermal") do_thermal_task(params, context);
-  else if (task == "visibility") do_visibility_task(params, context);
 
 #if USE_MPI
   MPI_Finalize();

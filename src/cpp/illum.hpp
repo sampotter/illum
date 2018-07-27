@@ -16,8 +16,6 @@ struct illum_context {
   illum_context(char const * path, int shape_index = 0);
   ~illum_context();
 
-  void make_A(arma::sp_umat & A, double offset = 1e-5);
-
   arma::sp_mat compute_F(double offset = 1e-5);
 
   void make_horizons(
@@ -50,8 +48,6 @@ private:
   struct impl;
   std::unique_ptr<impl> pimpl;
 };
-
-void compute_V(arma::sp_umat const & A, arma::sp_umat & V);
 
 void fib_spiral(arma::mat & xy, int n);
 
