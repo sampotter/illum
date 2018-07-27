@@ -15,44 +15,6 @@ MPI_Comm comm = MPI_COMM_WORLD;
 MPI_Info info = MPI_INFO_NULL;
 #endif
 
-template <typename T>
-std::pair<arma::uvec, arma::uvec> get_rowinds_and_colptrs(arma::SpMat<T> const & S) {
-  arma::uvec rowinds(S.n_nonzero), colptrs(S.n_cols + 1);
-  size_t i = 0, j = 0;
-  colptrs(0) = 0;
-  for (auto it = S.begin(); it != S.end(); ++it) {
-    rowinds(i++) = it.row();
-    if (j != it.col()) {
-      colptrs(j = it.col()) = i;
-    }
-  }
-  colptrs(++j) = S.n_nonzero;
-  return {rowinds, colptrs};
-}
-
-template <typename T>
-void write_csc_inds(arma::SpMat<T> const & S, std::string const & path) {
-  auto values = arma::nonzeros(S);
-  arma::uvec rowinds, colptrs;
-  std::tie(rowinds, colptrs) = get_rowinds_and_colptrs(S);
-  values.save(path + "_values.bin");
-  rowinds.save(path + "_values.bin");
-  colptrs.save(path + "_values.bin");
-}
-
-void write_coo(arma::sp_umat const & S, const char * path) {
-  std::ofstream f;
-  f.open(path);
-  for (size_t j = 0; j < S.n_cols; ++j) {
-    for (size_t i = 0; i < S.n_rows; ++i) {
-      if (S(i, j)) {
-        f << i << ", " << j << ", " << S(i, j) << std::endl;
-      }
-    }
-  }
-  f.close();
-}
-
 void usage(std::string const & argv0) {
   std::cout << "usage: " << argv0 << std::endl;
 }
