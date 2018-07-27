@@ -42,7 +42,7 @@ struct job_params {
   double offset, theta_eps;
   int nphi, gs_steps;
   opt_t<std::string> output_dir, horizon_file, sun_pos_file;
-  bool do_radiosity, print_residual;
+  bool do_radiosity, print_residual, do_thermal;
 
   // TODO: should we use boost units for this eventually?
   std::string sun_unit, mesh_unit;
@@ -127,7 +127,15 @@ void do_radiosity_task(job_params & params, illum_context & context) {
   // "direct" and only save "rad"
   arma::mat direct(nfaces, nsunpos), rad(nfaces, nsunpos);
 
-  arma::sp_mat F, K;
+  arma::mat therm;
+  if (params.do_thermal) {
+    therm.resize(nfaces, nsunpos);
+  }
+
+  // TODO: only construct this if we actually need to use it
+  thermal_model therm_model {nfaces};
+
+  arma::sp_mat F;
 
   if (params.do_radiosity) {
     timed("- assembling form factor matrix", [&] () {
@@ -177,6 +185,18 @@ void do_radiosity_task(job_params & params, illum_context & context) {
       };
       rad.col(j) = B;
     }
+
+    if (params.do_thermal) {
+      timed("- " + frame_str + ": stepping thermal model", [&] () {
+        therm.col(j) = therm_model.T.row(0).t();
+
+        // TODO: default value of dt here: make this a command-line
+        // argument
+        double dt = 600.0;
+
+        therm_model.step(dt, params.do_radiosity ? rad.col(j) : direct.col(j));
+      });
+    }
   }
 
   boost::filesystem::path output_dir_path = params.output_dir ?
@@ -197,116 +217,18 @@ void do_radiosity_task(job_params & params, illum_context & context) {
       arma_util::save_mat(rad - direct, output_dir_path/"diff", i0, i1);
     });
   }
-}
 
-void do_thermal_task(job_params & params, illum_context & context) {
-  int nfaces = context.get_num_faces();
-  opt_t<int> i0, i1, nhoriz;
-
-#if USE_MPI
-  set_i0_and_i1(nfaces, i0, i1);
-#endif
-
-  /*
-   * Load or create a matrix containing the horizons.
-   */
-  if (params.horizon_file) {
-    file_exists_or_die(*params.horizon_file);
-    timed("- loading horizon map from " + *params.horizon_file, [&] () {
-      // load_mat(*params.horizon_file, horizons, i0, i1);
-      context.load_horizons(*params.horizon_file, i0, i1);
-    });
-  } else {
-    timed("- building horizon map", [&] () {
-      context.make_horizons(params.nphi, params.theta_eps, params.offset, i0, i1);
-    });
-    nhoriz = nfaces;
-  }
-
-  arma::mat sun_positions;
-  if (params.sun_pos_file) {
-    file_exists_or_die(*params.sun_pos_file);
-    timed("- loading sun positions", [&] () {
-      sun_positions.load(*params.sun_pos_file, arma::raw_ascii);
-      sun_positions = sun_positions.t();
-      if (sun_positions.n_rows > 3) {
-        sun_positions.shed_rows(3, sun_positions.n_rows - 1);
-      }
-    });
-  } else {
-    // A little test problem using made-up numbers
-    auto d_sun = 227390024000.; // m
-    sun_positions.resize(3, 1);
-    sun_positions.col(0) = d_sun*normalise(arma::randn<arma::vec>(3));
-  }
-
-  // Rescale the sun positions as necessary
-  if (params.sun_unit == "m") {
-    sun_positions /= 1000.;
-  }
-
-  arma::mat disk_xy;
-  fib_spiral(disk_xy, 100);
-
-  int nsunpos = sun_positions.n_cols;
-
-  arma::mat therm(nfaces, nsunpos);
-  thermal_model therm_model {nfaces};
-
-  arma::sp_mat F, K;
-
-  if (params.do_radiosity) {
-    timed("- assembling form factor matrix", [&] () {
-      F = context.compute_F();
-    });
-
-    assert(F.n_rows == static_cast<arma::uword>(nfaces));
-    assert(F.n_cols == static_cast<arma::uword>(nfaces));
-
-    timed("- writing form factor matrix", [&] () {
-      F.save("F.txt", arma::coord_ascii);
-    });
-
-    K = arma::speye(nfaces, nfaces) - 0.12*F;
-  }
-
-  for (int j = 0; j < nsunpos; ++j) {
-    std::string const frame_str {
-      std::to_string(j + 1) + "/" + std::to_string(nsunpos)
-    };
-
-    arma::vec direct;
-
-    timed("- " + frame_str + ": computing direct radiosity", [&] () {
-      direct = context.get_direct_radiosity(
-        sun_positions.col(j), disk_xy, constants::SUN_RADIUS, i0, i1);
-
-      // TODO: temporary---use actual formula here
-      direct *= 586.2;
-    });
-          
-    timed("- " + frame_str + ": stepping thermal model", [&] () {
-      therm.col(j) = therm_model.T.row(0).t();
-      if (params.do_radiosity) {
-        direct = arma::spsolve(K, direct, "superlu");
-      }
-      therm_model.step(600., direct);
+  if (params.do_thermal) {
+    timed("- saving thermal", [&] () {
+      arma_util::save_mat(therm, output_dir_path/"thermal", i0, i1);
     });
   }
-
-  boost::filesystem::path output_dir_path = params.output_dir ?
-    *params.output_dir : ".";
-
-  timed("- saving thermal", [&] () {
-    arma_util::save_mat(therm, output_dir_path/"thermal", i0, i1);
-  });
 }
 
 int main(int argc, char * argv[]) {
   std::set<std::string> tasks = {
     "horizons",
-    "radiosity",
-    "thermal"
+    "radiosity"
   };
 
   auto tasks_to_string = [&] () {
@@ -322,7 +244,7 @@ int main(int argc, char * argv[]) {
 
   options.add_options()
     ("h,help", "Display usage")
-    ("t,task", "Task to do", cxxopts::value<std::string>())
+    ("task", "Task to do", cxxopts::value<std::string>())
     ("p,path", "Path to input OBJ file", cxxopts::value<std::string>())
     ("s,shape", "Shape index in OBJ file",
      cxxopts::value<int>()->default_value("0"))
@@ -342,6 +264,8 @@ int main(int argc, char * argv[]) {
      "radiosity", cxxopts::value<int>()->default_value("1"))
     ("print_residual", "Print the residual at each step when computing the "
      "scattered radiosity", cxxopts::value<bool>()->default_value("false"))
+    ("t,thermal", "Drive a thermal model",
+     cxxopts::value<bool>()->default_value("false"))
     ("output_dir", "Output file", cxxopts::value<std::string>())
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
     ("sun_pos_file", "File containing sun positions",
@@ -376,6 +300,7 @@ int main(int argc, char * argv[]) {
   params.do_radiosity = args["radiosity"].as<bool>();
   params.gs_steps = args["gs_steps"].as<int>();
   params.print_residual = args["print_residual"].as<bool>();
+  params.do_thermal = args["thermal"].as<bool>();
   if (args.count("output_dir") != 0) {
     params.output_dir = args["output_dir"].as<std::string>();
   }
@@ -414,7 +339,6 @@ int main(int argc, char * argv[]) {
 
   if (task == "horizons") do_horizons_task(params, context);
   else if (task == "radiosity") do_radiosity_task(params, context);
-  else if (task == "thermal") do_thermal_task(params, context);
 
 #if USE_MPI
   MPI_Finalize();
