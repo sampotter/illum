@@ -15,10 +15,6 @@ MPI_Comm comm = MPI_COMM_WORLD;
 MPI_Info info = MPI_INFO_NULL;
 #endif
 
-void usage(std::string const & argv0) {
-  std::cout << "usage: " << argv0 << std::endl;
-}
-
 void timed(std::string const & message, std::function<void()> func) {
   std::cout << message << std::flush;
   tic();
