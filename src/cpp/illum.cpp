@@ -130,8 +130,13 @@ arma::sp_mat
 illum_context::impl::compute_F(double offset) {
   IntersectionInfo info;
 
-  std::vector<arma::uword> inds;
-  std::vector<double> values;
+  struct elt {
+    elt(arma::uword i, arma::uword j, double F): i {i}, j {j}, F {F} {}
+    arma::uword i, j;
+    double F;
+  };
+
+  std::vector<elt> elts;
 
   auto compute_form_factors_for_face = [&] (arma::uword j) {
     auto tri_j = static_cast<Tri const *>(objects[j]);
@@ -212,9 +217,7 @@ illum_context::impl::compute_F(double offset) {
         continue;
       }
 
-      inds.push_back(i);
-      inds.push_back(j);
-      values.push_back(F_ij);
+      elts.emplace_back(i, j, F_ij);
     }
   };
 
@@ -222,10 +225,29 @@ illum_context::impl::compute_F(double offset) {
     compute_form_factors_for_face(j);
   }
 
-  arma::umat locations(inds);
-  locations.reshape(2, values.size());
+  auto comp = [] (elt const & e1, elt const & e2) -> bool {
+    return e1.j == e2.j ? e1.i < e2.i : e1.j < e2.j;
+  };
 
-  return arma::sp_mat(locations, arma::vec(values));
+  std::sort(elts.begin(), elts.end(), comp);
+
+  arma::umat locs(2, elts.size());
+  for (arma::uword k = 0; k < elts.size(); ++k) {
+    locs(0, k) = elts[k].i;
+    locs(1, k) = elts[k].j;
+  }
+
+  arma::vec values(elts.size());
+  for (arma::uword k = 0; k < elts.size(); ++k) {
+    values(k) = elts[k].F;
+  }
+
+  /**
+   * Construct and return the sparse form factor matrix---the false
+   * here tells Armadillo not to sort the entries into column-major
+   * ordering. We've already done that above.
+   */
+  return arma::sp_mat {locs, values, false};
 }
 
 /**
