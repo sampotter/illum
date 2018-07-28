@@ -4,7 +4,8 @@
 namespace constants {
 
 // TODO: boost units
-constexpr double SUN_RADIUS = 1391400000./2.; // m
+constexpr double ONE_AU_KM = 149.5978707e6;
+constexpr double SUN_RADIUS_KM = 695508;
 
 }
 
