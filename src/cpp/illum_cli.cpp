@@ -119,13 +119,18 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
   int nsunpos = sun_positions.n_cols;
 
-  // TODO: once we know the radiosity method is working, we can delete
-  // "direct" and only save "rad"
-  arma::mat direct(nfaces, nsunpos), rad(nfaces, nsunpos);
+  arma::vec rad(nfaces), rad_avg(nfaces, arma::fill::zeros);
 
-  arma::mat therm;
+  arma::vec therm, therm_avg, therm_max;
+
   if (params.do_thermal) {
-    therm.resize(nfaces, nsunpos);
+    therm.resize(nfaces);
+
+    therm_avg.resize(nfaces);
+    therm_avg.zeros();
+
+    therm_max.resize(nfaces);
+    therm_max.zeros();
   }
 
   // TODO: only construct this if we actually need to use it
@@ -156,47 +161,54 @@ void do_radiosity_task(job_params & params, illum_context & context) {
       std::to_string(j + 1) + "/" + std::to_string(nsunpos)
     };
 
+    rad.zeros();
+
     /**
      * Incorporate heat flux at surface into radiosity.
      */
     if (params.do_thermal) {
-      direct.col(j) += therm_model.get_radiosity();
-      std::cout << "- mean: " << arma::mean(direct.col(j)) << std::endl;
+      rad += therm_model.get_radiosity();
     }
 
     timed("- " + frame_str + ": computing direct radiosity", [&] () {
-      direct.col(j) = context.get_direct_radiosity(
+      rad += context.get_direct_radiosity(
         sun_positions.col(j), disk_xy, i0, i1);
-
+      std::cout << " [mean: " << arma::mean(rad) << "W]";
     });
 
     if (params.do_radiosity) {
       arma::sp_mat L_t = (arma::speye(nfaces, nfaces) - arma::trimatl(F)).t();
       arma::sp_mat U = -arma::trimatu(F);
 
-      arma::vec E = direct.col(j);
-      arma::vec B = arma_util::forward_solve(L_t, E);
+      arma::vec E = rad;
+      rad = arma_util::forward_solve(L_t, E);
       for (int iter = 0; iter < params.gs_steps; ++iter) {
         timed("  + doing Gauss-Seidel step", [&] () {
-          B = arma_util::forward_solve(L_t, E - U*B);
+          rad = arma_util::forward_solve(L_t, E - U*rad);
           if (params.print_residual) {
-            double res = arma::norm((B.t()*L_t).t() + U*B - direct.col(j));
+            double res = arma::norm((rad.t()*L_t).t() + U*rad - E);
             std::cout << " [res = " << res << "]";
           }
         });
       };
-      rad.col(j) = B;
     }
+
+    rad_avg += (rad - rad_avg)/(j + 1);
 
     if (params.do_thermal) {
       timed("- " + frame_str + ": stepping thermal model", [&] () {
-        therm.col(j) = therm_model.T.row(0).t();
+        therm = therm_model.T.row(0).t();
 
         // TODO: default value of dt here: make this a command-line
         // argument
         double dt = 600.0;
+        therm_model.step(dt, rad);
 
-        therm_model.step(dt, params.do_radiosity ? rad.col(j) : direct.col(j));
+        therm_avg += (therm - therm_avg)/(j + 1);
+
+        if (j > 50) {
+          therm_max = arma::max(therm_max, therm);
+        }
       });
     }
   }
@@ -204,25 +216,25 @@ void do_radiosity_task(job_params & params, illum_context & context) {
   boost::filesystem::path output_dir_path = params.output_dir ?
     *params.output_dir : ".";
 
-  timed("- saving direct radiosity", [&] () {
-    arma_util::save_mat(direct, output_dir_path/"direct", i0, i1);
+  timed("- saving radiosity", [&] () {
+    arma_util::save_mat(rad, output_dir_path/"rad", i0, i1);
   });
 
-  if (params.do_radiosity) {
-    timed("- saving radiosity", [&] () {
-      arma_util::save_mat(rad, output_dir_path/"rad", i0, i1);
-    });
-  }
-  
-  if (params.do_radiosity) {
-    timed("- saving 'rad - dir'", [&] () {
-      arma_util::save_mat(rad - direct, output_dir_path/"diff", i0, i1);
-    });
-  }
+  timed("- saving average radiosity", [&] () {
+    arma_util::save_mat(rad_avg, output_dir_path/"rad_avg", i0, i1);
+  });
 
   if (params.do_thermal) {
     timed("- saving thermal", [&] () {
-      arma_util::save_mat(therm, output_dir_path/"thermal", i0, i1);
+      arma_util::save_mat(therm, output_dir_path/"therm", i0, i1);
+    });
+
+    timed("- saving average thermal", [&] () {
+      arma_util::save_mat(therm_avg, output_dir_path/"therm_avg", i0, i1);
+    });
+
+    timed("- saving max thermal", [&] () {
+      arma_util::save_mat(therm_max, output_dir_path/"therm_max", i0, i1);
     });
   }
 }
