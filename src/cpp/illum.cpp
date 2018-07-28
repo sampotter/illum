@@ -133,7 +133,7 @@ illum_context::impl::compute_F(double offset) {
   std::vector<arma::uword> inds;
   std::vector<double> values;
 
-  for (arma::uword j = 0; j < num_faces; ++j) {
+  auto compute_form_factors_for_face = [&] (arma::uword j) {
     auto tri_j = static_cast<Tri const *>(objects[j]);
     auto p_j = tri_j->getCentroid();
     auto n_j = tri_j->getNormal(info);
@@ -216,6 +216,10 @@ illum_context::impl::compute_F(double offset) {
       inds.push_back(j);
       values.push_back(F_ij);
     }
+  };
+
+  for (arma::uword j = 0; j < num_faces; ++j) {
+    compute_form_factors_for_face(j);
   }
 
   arma::umat locations(inds);
