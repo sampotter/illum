@@ -128,17 +128,17 @@ illum_context::get_num_faces() const {
 
 arma::sp_mat
 illum_context::impl::compute_F(double offset) {
-  IntersectionInfo info;
-
   struct elt {
     elt(arma::uword i, arma::uword j, double F): i {i}, j {j}, F {F} {}
     arma::uword i, j;
     double F;
   };
 
-  std::vector<elt> elts;
+  auto compute_form_factors_for_face = [&] (arma::uword j) -> std::vector<elt> {
+    IntersectionInfo info;
 
-  auto compute_form_factors_for_face = [&] (arma::uword j) {
+    std::vector<elt> elts;
+
     auto tri_j = static_cast<Tri const *>(objects[j]);
     auto p_j = tri_j->getCentroid();
     auto n_j = tri_j->getNormal(info);
@@ -219,24 +219,82 @@ illum_context::impl::compute_F(double offset) {
 
       elts.emplace_back(i, j, F_ij);
     }
+
+    return elts;
   };
 
-  for (arma::uword j = 0; j < num_faces; ++j) {
-    compute_form_factors_for_face(j);
-  }
+  /**
+   * First, compute form factor elements for all approximately visible
+   * pairs.  If we're using TBB, we do this using a parallel reducer,
+   * otherwise we do it in a relatively straightforward serial
+   * fashion.
+   */
+  std::vector<elt> elts;
+#if USE_TBB
+  tbb::concurrent_vector<std::vector<elt>> all_elts(num_faces);
 
+  tbb::parallel_for(size_t(0), num_faces, [&] (size_t j) {
+    all_elts[j] = compute_form_factors_for_face(j);
+  });
+
+  struct reducer
+  {
+    using range_t = tbb::blocked_range<decltype(all_elts)::iterator>;
+
+    reducer() {}
+    reducer(reducer &, tbb::split) {}
+
+    void operator()(range_t const & r) {
+      for (auto it = r.begin(); it != r.end(); ++it) {
+        elts.insert(elts.end(), it->begin(), it->end());
+      }
+    }
+
+    void join(reducer const & other) {
+      elts.insert(elts.end(), other.elts.begin(), other.elts.end());
+    }
+
+    std::vector<elt> elts;
+  };
+
+  reducer r;
+  tbb::parallel_reduce(reducer::range_t {all_elts.begin(), all_elts.end()}, r);
+  elts = r.elts;
+#else
+  for (arma::uword j = 0; j < num_faces; ++j) {
+    auto new_elts = compute_form_factors_for_face(j);
+    elts.insert(elts.end(), new_elts.begin(), new_elts.end());
+  }
+#endif
+
+  /**
+   * Next, we sort the indices into column major order. Although
+   * Armadillo can do this, we do this ourselves to take advantage of
+   * TBB's parallel sort when it's available to us.
+   */
   auto comp = [] (elt const & e1, elt const & e2) -> bool {
     return e1.j == e2.j ? e1.i < e2.i : e1.j < e2.j;
   };
-
+#if USE_TBB
+  tbb::parallel_sort(elts.begin(), elts.end(), comp);
+#else
   std::sort(elts.begin(), elts.end(), comp);
+#endif
 
+  /**
+   * Build the matrix of location values in the format Armadillo expects
+   * for its constructor.
+   */
   arma::umat locs(2, elts.size());
   for (arma::uword k = 0; k < elts.size(); ++k) {
     locs(0, k) = elts[k].i;
     locs(1, k) = elts[k].j;
   }
 
+  /**
+   * Build the vector of form factors to pass to the sp_mat
+   * constructor.
+   */
   arma::vec values(elts.size());
   for (arma::uword k = 0; k < elts.size(); ++k) {
     values(k) = elts[k].F;
@@ -245,7 +303,7 @@ illum_context::impl::compute_F(double offset) {
   /**
    * Construct and return the sparse form factor matrix---the false
    * here tells Armadillo not to sort the entries into column-major
-   * ordering. We've already done that above.
+   * ordering, since we've already done that above.
    */
   return arma::sp_mat {locs, values, false};
 }
