@@ -156,6 +156,14 @@ void do_radiosity_task(job_params & params, illum_context & context) {
       std::to_string(j + 1) + "/" + std::to_string(nsunpos)
     };
 
+    /**
+     * Incorporate heat flux at surface into radiosity.
+     */
+    if (params.do_thermal) {
+      direct.col(j) += therm_model.get_radiosity();
+      std::cout << "- mean: " << arma::mean(direct.col(j)) << std::endl;
+    }
+
     timed("- " + frame_str + ": computing direct radiosity", [&] () {
       direct.col(j) = context.get_direct_radiosity(
         sun_positions.col(j), disk_xy, constants::SUN_RADIUS, i0, i1);

@@ -32,10 +32,14 @@ struct thermal_model {
 
     Qprev.zeros(nfaces);
 
-    F.set_size(nfaces);
+    F.zeros(nfaces);
 
     T.set_size(nz + 1, nfaces);
     T.fill(233.0);
+  }
+
+  arma::vec get_radiosity() const {
+    return -F;
   }
 
   void step(double dt, arma::vec const & Q) {
