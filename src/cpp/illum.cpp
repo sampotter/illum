@@ -205,7 +205,7 @@ illum_context::impl::compute_F(double offset) {
       double F_ij = mu_ij*mu_ji*A_j/(arma::datum::pi*r_ij*r_ij);
 
       if (std::isnan(F_ij)) {
-        std::cout << "NAN" << std::endl;
+        throw std::runtime_error("computed a NaN form factor");
       }
 
       if (F_ij == 0) {
