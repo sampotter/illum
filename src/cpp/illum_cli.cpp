@@ -166,10 +166,8 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
     timed("- " + frame_str + ": computing direct radiosity", [&] () {
       direct.col(j) = context.get_direct_radiosity(
-        sun_positions.col(j), disk_xy, constants::SUN_RADIUS, i0, i1);
+        sun_positions.col(j), disk_xy, i0, i1);
 
-      // TODO: temporary---use actual formula here
-      direct.col(j) *= 586.2;
     });
 
     if (params.do_radiosity) {

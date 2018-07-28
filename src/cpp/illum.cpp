@@ -5,6 +5,7 @@
 #include <config.hpp>
 
 #include "arma_util.hpp"
+#include "constants.hpp"
 #include "obj_util.hpp"
 #include "sp_inds.hpp"
 
@@ -49,7 +50,6 @@ struct illum_context::impl
   arma::vec get_direct_radiosity(
     arma::vec const & sun_position,
     arma::mat const & disk_xy,
-    double sun_radius,
     opt_t<int> const & j0,
     opt_t<int> const & j1);
 
@@ -109,16 +109,10 @@ arma::vec
 illum_context::get_direct_radiosity(
   arma::vec const & sun_position,
   arma::mat const & disk_xy,
-  double sun_radius,
   opt_t<int> j0,
   opt_t<int> j1)
 {
-  return pimpl->get_direct_radiosity(
-    sun_position,
-    disk_xy,
-    sun_radius,
-    j0,
-    j1);
+  return pimpl->get_direct_radiosity(sun_position, disk_xy, j0, j1);
 }
 
 int
@@ -452,7 +446,6 @@ arma::vec
 illum_context::impl::get_direct_radiosity(
   arma::vec const & sun_position,
   arma::mat const & disk_XY,
-  double sun_radius,
   opt_t<int> const & j0,
   opt_t<int> const & j1)
 {
@@ -477,13 +470,12 @@ illum_context::impl::get_direct_radiosity(
 
     vec::fixed<3> N = normalise(sun_position - p);
     vec::fixed<3> T = normalise((eye(3, 3) - N*N.t())*randn<vec>(3));
-    vec::fixed<3> B = cross
-      (T, N);
+    vec::fixed<3> B = cross(T, N);
 
     mat disk(3, disk_XY.n_rows);
     for (size_t j = 0; j < disk_XY.n_rows; ++j) {
       disk.col(j) = sun_position +
-        sun_radius*(disk_XY(j, 0)*T + disk_XY(j, 1)*B);
+        constants::SUN_RADIUS_KM*(disk_XY(j, 0)*T + disk_XY(j, 1)*B);
     }
 
     auto BTN = get_frenet_frame(static_cast<Tri const *>(obj));
@@ -518,6 +510,12 @@ illum_context::impl::get_direct_radiosity(
     // pointing towards the sun and the surface normal
     // (i.e. assume Lambertian---fine for thermal)
     direct(dir_ind) *= fmax(0, arma::dot(N, BTN.col(2)));
+
+    // TODO: Scale by the total power: not at all confident that this
+    // is correct, but Erwan seems to think so; will trust this number
+    // for now
+    direct(dir_ind) *= 1372*std::pow(
+      constants::ONE_AU_KM/arma::norm(sun_position), 2);
 
     assert(0 <= direct(dir_ind));
     assert(direct(dir_ind) <= 1);
