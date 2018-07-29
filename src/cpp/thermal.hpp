@@ -9,7 +9,11 @@ struct thermal_model {
   arma::vec z, ti, rhoc, Qprev, F;
   arma::mat T;
 
-  thermal_model(int nfaces) {
+  thermal_model(
+    int nfaces,
+    double thermal_inertia = 70.0,
+    double init_temp = 233.0)
+  {
     z = {
       0.00197, 0.00434, 0.00718, 0.01060, 0.01469, 0.01960, 0.02549, 0.03257,
       0.04105, 0.05124, 0.06346, 0.07812, 0.09572, 0.11684, 0.14218, 0.17259,
@@ -21,7 +25,7 @@ struct thermal_model {
     t = 0;
     
     ti.set_size(nz);
-    ti.fill(70.0);
+    ti.fill(thermal_inertia);
 
     rhoc = {
       1.42491e+06, 1.41942e+06, 1.41294e+06, 1.40533e+06, 1.39643e+06,
@@ -35,7 +39,7 @@ struct thermal_model {
     F.zeros(nfaces);
 
     T.set_size(nz + 1, nfaces);
-    T.fill(233.0);
+    T.fill(init_temp);
   }
 
   arma::vec get_radiosity() const {

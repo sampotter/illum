@@ -304,7 +304,7 @@ illum_context::impl::compute_F(double offset) {
    * here tells Armadillo not to sort the entries into column-major
    * ordering, since we've already done that above.
    */
-  return arma::sp_mat {locs, values, false};
+  return arma::sp_mat {locs, values, num_faces, num_faces, false};
 }
 
 /**
