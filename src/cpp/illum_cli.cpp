@@ -38,7 +38,7 @@ struct job_params {
   double offset, theta_eps;
   int nphi, gs_steps;
   opt_t<std::string> output_dir, horizon_file, sun_pos_file;
-  bool do_radiosity, print_residual, do_thermal;
+  bool do_radiosity, print_residual, do_thermal, quiet;
 
   // TODO: should we use boost units for this eventually?
   std::string sun_unit, mesh_unit;
@@ -63,9 +63,11 @@ void do_horizons_task(job_params & params, illum_context & context) {
   if (params.output_dir) {
     output_path = *params.output_dir/output_path;
   }
-  timed("- saving horizon map to " + output_path.string(), [&] () {
-    context.save_horizons(output_path, i0, i1);
-  });
+  if (!params.quiet) {
+    timed("- saving horizon map to " + output_path.string(), [&] () {
+      context.save_horizons(output_path, i0, i1);
+    });
+  }
 }
 
 void do_radiosity_task(job_params & params, illum_context & context) {
@@ -150,10 +152,6 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
     assert(F.n_rows == static_cast<arma::uword>(nfaces));
     assert(F.n_cols == static_cast<arma::uword>(nfaces));
-
-    timed("- writing form factor matrix", [&] () {
-      F.save("F.txt", arma::coord_ascii);
-    });
   }
 
   for (int j = 0; j < nsunpos; ++j) {
@@ -216,26 +214,28 @@ void do_radiosity_task(job_params & params, illum_context & context) {
   boost::filesystem::path output_dir_path = params.output_dir ?
     *params.output_dir : ".";
 
-  timed("- saving radiosity", [&] () {
-    arma_util::save_mat(rad, output_dir_path/"rad", i0, i1);
-  });
-
-  timed("- saving average radiosity", [&] () {
-    arma_util::save_mat(rad_avg, output_dir_path/"rad_avg", i0, i1);
-  });
-
-  if (params.do_thermal) {
-    timed("- saving thermal", [&] () {
-      arma_util::save_mat(therm, output_dir_path/"therm", i0, i1);
+  if (!params.quiet) {
+    timed("- saving radiosity", [&] () {
+      arma_util::save_mat(rad, output_dir_path/"rad", i0, i1);
     });
 
-    timed("- saving average thermal", [&] () {
-      arma_util::save_mat(therm_avg, output_dir_path/"therm_avg", i0, i1);
+    timed("- saving average radiosity", [&] () {
+      arma_util::save_mat(rad_avg, output_dir_path/"rad_avg", i0, i1);
     });
 
-    timed("- saving max thermal", [&] () {
-      arma_util::save_mat(therm_max, output_dir_path/"therm_max", i0, i1);
-    });
+    if (params.do_thermal) {
+      timed("- saving thermal", [&] () {
+        arma_util::save_mat(therm, output_dir_path/"therm", i0, i1);
+      });
+
+      timed("- saving average thermal", [&] () {
+        arma_util::save_mat(therm_avg, output_dir_path/"therm_avg", i0, i1);
+      });
+
+      timed("- saving max thermal", [&] () {
+        arma_util::save_mat(therm_max, output_dir_path/"therm_max", i0, i1);
+      });
+    }
   }
 }
 
@@ -280,6 +280,8 @@ int main(int argc, char * argv[]) {
      "scattered radiosity", cxxopts::value<bool>()->default_value("false"))
     ("t,thermal", "Drive a thermal model",
      cxxopts::value<bool>()->default_value("false"))
+    ("q,quiet", "Don't save output", 
+     cxxopts::value<bool>()->default_value("false"))
     ("output_dir", "Output file", cxxopts::value<std::string>())
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
     ("sun_pos_file", "File containing sun positions",
@@ -315,6 +317,7 @@ int main(int argc, char * argv[]) {
   params.gs_steps = args["gs_steps"].as<int>();
   params.print_residual = args["print_residual"].as<bool>();
   params.do_thermal = args["thermal"].as<bool>();
+  params.quiet = args["quiet"].as<bool>();
   if (args.count("output_dir") != 0) {
     params.output_dir = args["output_dir"].as<std::string>();
   }
