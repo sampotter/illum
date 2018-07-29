@@ -16,6 +16,7 @@
 #endif
 
 #include <algorithm>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
@@ -196,6 +197,10 @@ illum_context::impl::compute_F(double offset) {
 
       auto p_ij = p_j - p_i;
       double r_ij = length(p_ij);
+      if (r_ij < std::numeric_limits<double>::epsilon()) {
+        continue;
+      }
+
       auto n_ij = p_ij/r_ij;
 
       double mu_ij = fmax(0, n_i*n_ij);
