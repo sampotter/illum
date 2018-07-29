@@ -40,6 +40,8 @@ int main(int argc, char * argv[])
     ("shape_index", "OBJ file shape index", value<int>()->default_value("0"))
     ("W,width", "Image width [px]", value<int>()->default_value("512"))
     ("H,height", "Image height [px]", value<int>()->default_value("512"))
+    ("m,min_value", "Minimum value for plot range", value<double>())
+    ("M,max_value", "Maximum value for plot range", value<double>())
     ("az_cam", "Camera azimuth [deg]", value<double>()->default_value("0"))
     ("el_cam", "Camera elevation [deg]", value<double>()->default_value("0"))
     ("r_cam", "Distance of camera from model centroid [km]",
@@ -72,6 +74,16 @@ int main(int argc, char * argv[])
   double r_cam = args["r_cam"].as<double>();
   mode_e mode = string_to_mode(args["mode"].as<std::string>());
   
+  opt_t<double> min_value;
+  if (args["min_value"].count() > 0) {
+    min_value = args["min_value"].as<double>();
+  }
+
+  opt_t<double> max_value;
+  if (args["max_value"].count() > 0) {
+    max_value = args["max_value"].as<double>();
+  }
+
   if (args["r_cam"].count() > 0) {
     if (mode == mode_e::ORTHO) {
       std::cerr << "setting r_cam while mode is ortho is invalid" << std::endl;
@@ -81,8 +93,22 @@ int main(int argc, char * argv[])
     }
   }
 
+  if (!data_path) {
+    throw std::runtime_error("plot radius not implemented yet");
+  }
+
   arma::vec data;
   data.load(*data_path);
+  if (min_value) {
+    for (arma::uword i = 0; i < data.n_elem; ++i) {
+      data(i) = std::max(*min_value, data(i));
+    }
+  }
+  if (max_value) {
+    for (arma::uword i = 0; i < data.n_elem; ++i) {
+      data(i) = std::min(*max_value, data(i));
+    }
+  }
   
   auto objects = obj_util::get_objects(obj_path.c_str(), shape_index);
 
@@ -104,8 +130,10 @@ int main(int argc, char * argv[])
 
   BVH bvh {&objects};
 
-  az_cam *= 180*PI;
-  el_cam *= 180*PI;
+  az_cam *= PI/180;
+  el_cam *= PI/180;
+
+  std::cout << az_cam << ", " << el_cam << std::endl;
 
   if (r_cam == 0) {
     std::cerr << "r_cam is uninitialized somehow" << std::endl;
@@ -131,34 +159,41 @@ int main(int argc, char * argv[])
 
   Vector3 n_right = n_eye^n_up;
 
-  arma::mat img_data(width, height);
-  
   if (mode == mode_e::ORTHO) {
-    double aspect = static_cast<double>(width)/height;
+    struct elt {
+      elt(int i, int j, double value): i {i}, j {j}, value {value} {}
+      int i, j;
+      double value;
+    };
 
-    std::vector<std::pair<int, int>> misses;
+    std::vector<elt> elts;
+
+    double aspect = static_cast<double>(width)/height;
 
     IntersectionInfo info;
     for (int i = 0; i < height; ++i) {
       double y_eye = 2*(1. - static_cast<double>(i)/(height - 1)) - 1;
-      y_eye *= r_model;
+      y_eye *= r_cam;
       for (int j = 0; j < width; ++j) {
         double x_eye = 2*static_cast<double>(j)/(width - 1) - 1;
-        x_eye *= aspect*r_model;
+        x_eye *= aspect*r_cam;
 
         Vector3 p_ray = p_cam + y_eye*n_up + x_eye*n_right;
         Ray ray(p_ray, n_eye);
-        if (!bvh.getIntersection(ray, &info, false)) {
-          img_data(j, i) = 0;
-        } else {
+        if (bvh.getIntersection(ray, &info, false)) {
           int index = static_cast<Tri const *>(info.object)->index;
-          img_data(j, i) = data(index);
+          elts.emplace_back(i, j, data(index));
         }
       }
     }
 
-    img_data -= img_data.min();
-    img_data /= img_data.max();
+    double lo = min_value ? *min_value : data.min();
+    double hi = max_value ? *max_value : data.max();
+
+    for (auto & elt: elts) {
+      elt.value -= lo;
+      elt.value /= hi - lo;
+    }
 
     // auto cmap = (uint8_t **) cet_CBD1;
 
@@ -199,10 +234,8 @@ int main(int argc, char * argv[])
       static_cast<png::uint_32>(height)
     };
     
-    for (int i = 0; i < height; ++i) {
-      for (int j = 0; j < width; ++j) {
-        img.set_pixel(j, i, bw(img_data(j, i)));
-      }
+    for (auto & elt: elts) {
+      img.set_pixel(elt.j, elt.i, bw(elt.value));
     }
 
     img.write(img_path);
