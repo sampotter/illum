@@ -1,3 +1,23 @@
+* Long term ideas
+** Numerical study of conditioning
+   - It would be good to build some intuition as to what the
+     conditioning of the form factor matrix depends on
+   - Here's one way we could explore this:
+	 1. Start with a discretized sphere (F = identity matrix,
+        perfectly conditioned)
+	 2. Take two approaches to simulating planetary bodies:
+		- Add low frequency spherical harmonic perturbations (turn it
+          into a bean)
+		- Did out craters
+		- Combine these approaches
+	 3. Do these two things while increasing the size of the mesh, see
+        what happens
+** Taking advantage of BEM techniques
+   - Unlike traditional radiosity, where the matrices are largely
+     dense, our matrices are very sparse
+   - For some models (e.g. 67P) the form factor matrix will be denser
+   - Can we use an algorithm for finding cliques in graphs to reorder
+     the triangle mesh and take advantage of e.g. wavelet methods?
 * General
 ** DONE Read Boost MPI tutorial
    :LOGBOOK:
@@ -79,3 +99,4 @@
    :END:
 ** DONE [#A] MPI ratios
 ** TODO Read sun points with weights
+
