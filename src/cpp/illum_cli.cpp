@@ -39,6 +39,7 @@ struct job_params {
   int nphi, gs_steps;
   opt_t<std::string> output_dir, horizon_file, sun_pos_file;
   bool do_radiosity, print_residual, do_thermal;
+  double dt, albedo, thermal_inertia, initial_temperature;
 
   // TODO: should we use boost units for this eventually?
   std::string sun_unit, mesh_unit;
@@ -134,17 +135,17 @@ void do_radiosity_task(job_params & params, illum_context & context) {
   }
 
   // TODO: only construct this if we actually need to use it
-  thermal_model therm_model {nfaces};
+  thermal_model therm_model {
+    nfaces,
+    params.thermal_inertia,
+    params.initial_temperature
+  };
 
   arma::sp_mat F;
 
   if (params.do_radiosity) {
     timed("- assembling form factor matrix", [&] () {
-      F = context.compute_F();
-
-      // TODO: temporary number for the albedo
-      F *= 0.12;
-
+      F = params.albedo*context.compute_F();
       std::cout << " [nnz = " << F.n_nonzero << "]";
     });
 
@@ -173,7 +174,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
     timed("- " + frame_str + ": computing direct radiosity", [&] () {
       rad += context.get_direct_radiosity(
         sun_positions.col(j), disk_xy, i0, i1);
-      std::cout << " [mean: " << arma::mean(rad) << "W]";
+      std::cout << " [mean: " << arma::mean(rad) << " W/m^2]";
     });
 
     if (params.do_radiosity) {
@@ -198,14 +199,8 @@ void do_radiosity_task(job_params & params, illum_context & context) {
     if (params.do_thermal) {
       timed("- " + frame_str + ": stepping thermal model", [&] () {
         therm = therm_model.T.row(0).t();
-
-        // TODO: default value of dt here: make this a command-line
-        // argument
-        double dt = 600.0;
-        therm_model.step(dt, rad);
-
+        therm_model.step(params.dt, rad);
         therm_avg += (therm - therm_avg)/(j + 1);
-
         if (j > 50) {
           therm_max = arma::max(therm_max, therm);
         }
@@ -280,6 +275,12 @@ int main(int argc, char * argv[]) {
      "scattered radiosity", cxxopts::value<bool>()->default_value("false"))
     ("t,thermal", "Drive a thermal model",
      cxxopts::value<bool>()->default_value("false"))
+    ("dt", "Time step for thermal model [s]",
+     cxxopts::value<double>()->default_value("600"))
+    ("a,albedo", "Albedo for model",
+     cxxopts::value<double>()->default_value("0.12"))
+    ("ti", "Thermal inertia", cxxopts::value<double>()->default_value("70.0"))
+    ("T0", "Initial temperate", cxxopts::value<double>()->default_value("233.0"))
     ("output_dir", "Output file", cxxopts::value<std::string>())
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
     ("sun_pos_file", "File containing sun positions",
@@ -315,6 +316,10 @@ int main(int argc, char * argv[]) {
   params.gs_steps = args["gs_steps"].as<int>();
   params.print_residual = args["print_residual"].as<bool>();
   params.do_thermal = args["thermal"].as<bool>();
+  params.dt = args["dt"].as<double>();
+  params.albedo = args["albedo"].as<double>();
+  params.thermal_inertia = args["ti"].as<double>();
+  params.initial_temperature = args["T0"].as<double>();
   if (args.count("output_dir") != 0) {
     params.output_dir = args["output_dir"].as<std::string>();
   }
