@@ -47,6 +47,8 @@ int main(int argc, char * argv[])
     ("r_cam", "Distance of camera from model centroid [km]",
      value<double>()->default_value("0"))
     ("mode", "Rendering mode", value<std::string>()->default_value("ortho"))
+    ("colormap", "Color map to use to render",
+     value<std::string>()->default_value("grayscale"))
     ;
 
   options.parse_positional({"obj_path"});
@@ -73,6 +75,7 @@ int main(int argc, char * argv[])
   double el_cam = args["el_cam"].as<double>();
   double r_cam = args["r_cam"].as<double>();
   mode_e mode = string_to_mode(args["mode"].as<std::string>());
+  std::string colormap = args["colormap"].as<std::string>();
   
   opt_t<double> min_value;
   if (args["min_value"].count() > 0) {
@@ -213,21 +216,23 @@ int main(int argc, char * argv[])
     //   };
     // };
     
-    // auto jet = [] (double x) -> png::rgb_pixel {
-    //   double r = std::clamp(x < 0.7 ? 4*x - 1.5 : -4*x + 4.5, 0., 1.);
-    //   double g = std::clamp(x < 0.5 ? 4*x - 0.5 : -4*x + 3.5, 0., 1.);
-    //   double b = std::clamp(x < 0.3 ? 4*x + 0.5 : -4*x + 2.5, 0., 1.);
-    //   return {
-    //     static_cast<uint8_t>(std::floor(256*r)),
-    //     static_cast<uint8_t>(std::floor(256*g)),
-    //     static_cast<uint8_t>(std::floor(256*b))
-    //   };
-    // };
+    auto jet = [] (double x) -> png::rgb_pixel {
+      double r = std::clamp(x < 0.7 ? 4*x - 1.5 : -4*x + 4.5, 0., 1.);
+      double g = std::clamp(x < 0.5 ? 4*x - 0.5 : -4*x + 3.5, 0., 1.);
+      double b = std::clamp(x < 0.3 ? 4*x + 0.5 : -4*x + 2.5, 0., 1.);
+      return {
+        static_cast<uint8_t>(std::floor(256*r)),
+        static_cast<uint8_t>(std::floor(256*g)),
+        static_cast<uint8_t>(std::floor(256*b))
+      };
+    };
 
     auto bw = [] (double x) -> png::rgb_pixel {
       auto byte = static_cast<uint8_t>(256*std::clamp(x, 0., 1.));
       return {byte, byte, byte};
     };
+
+    auto cmap = colormap == "grayscale" ? bw : jet;
 
     png::image<png::rgb_pixel> img {
       static_cast<png::uint_32>(width),
@@ -235,7 +240,7 @@ int main(int argc, char * argv[])
     };
     
     for (auto & elt: elts) {
-      img.set_pixel(elt.j, elt.i, bw(elt.value));
+      img.set_pixel(elt.j, elt.i, cmap(elt.value));
     }
 
     img.write(img_path);
