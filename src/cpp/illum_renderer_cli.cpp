@@ -193,6 +193,9 @@ int main(int argc, char * argv[])
     double lo = min_value ? *min_value : data.min();
     double hi = max_value ? *max_value : data.max();
 
+    std::cout << hi << std::endl;
+    std::cout << lo << std::endl;
+
     for (auto & elt: elts) {
       elt.value -= lo;
       elt.value /= hi - lo;
@@ -221,14 +224,14 @@ int main(int argc, char * argv[])
       double g = std::clamp(x < 0.5 ? 4*x - 0.5 : -4*x + 3.5, 0., 1.);
       double b = std::clamp(x < 0.3 ? 4*x + 0.5 : -4*x + 2.5, 0., 1.);
       return {
-        static_cast<uint8_t>(std::floor(256*r)),
-        static_cast<uint8_t>(std::floor(256*g)),
-        static_cast<uint8_t>(std::floor(256*b))
+        static_cast<uint8_t>(std::floor(255*r)),
+        static_cast<uint8_t>(std::floor(255*g)),
+        static_cast<uint8_t>(std::floor(255*b))
       };
     };
 
     auto bw = [] (double x) -> png::rgb_pixel {
-      auto byte = static_cast<uint8_t>(256*std::clamp(x, 0., 1.));
+      auto byte = static_cast<uint8_t>(255*std::clamp(x, 0., 1.));
       return {byte, byte, byte};
     };
 
