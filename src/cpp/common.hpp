@@ -10,6 +10,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
@@ -19,8 +20,15 @@
 
 #include <boost/filesystem.hpp>
 #include <boost/optional.hpp>
+#include <boost/variant.hpp>
+#include <boost/variant/apply_visitor.hpp>
+
+#include <fastbvh>
 
 template <class T>
 using opt_t = boost::optional<T>;
+
+template <class... T>
+using var_t = boost::variant<T...>;
 
 #endif // __COMMON_HPP__

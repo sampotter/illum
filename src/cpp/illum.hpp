@@ -1,16 +1,7 @@
 #ifndef __ILLUM_HPP__
 #define __ILLUM_HPP__
 
-#include "config.hpp"
-
-#include <armadillo>
-#include <boost/filesystem.hpp>
-#include <boost/optional.hpp>
-#include <fastbvh>
-#include <memory>
-
-template <class T>
-using opt_t = boost::optional<T>;
+#include "common.hpp"
 
 struct illum_context {
   illum_context();
@@ -24,7 +15,9 @@ struct illum_context {
 
   ~illum_context();
 
-  arma::sp_mat compute_F(double offset = 1e-5);
+  arma::sp_mat compute_F(
+    var_t<double, std::string> const & albedo,
+    double offset = 1e-5);
 
   void make_horizons(
     int nphi = 361,

@@ -40,10 +40,23 @@ struct job_params {
   opt_t<std::string> output_dir, horizon_file, sun_pos_file;
   opt_t<std::string> horizon_obj_file;
   bool do_radiosity, print_residual, do_thermal, quiet;
-  double dt, albedo, thermal_inertia, initial_temperature;
+  double dt, thermal_inertia, initial_temperature;
+  var_t<double, std::string> albedo;
 
   // TODO: should we use boost units for this eventually?
   std::string sun_unit, mesh_unit;
+
+  void set_albedo(std::string const & s) {
+    try {
+      albedo = std::stod(s);
+    } catch (std::invalid_argument const & e) {
+      file_exists_or_die(s);
+      albedo = s;
+    } catch (std::out_of_range const & e) {
+      std::cerr << "albedo value " << s << " is out of range" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
 };
 
 #if USE_MPI
@@ -148,7 +161,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
   if (params.do_radiosity) {
     timed("- assembling form factor matrix", [&] () {
-      F = params.albedo*context.compute_F();
+      F = context.compute_F(params.albedo);
       std::cout << " [nnz = " << F.n_nonzero << "]";
     });
 
@@ -280,7 +293,7 @@ int main(int argc, char * argv[]) {
     ("dt", "Time step for thermal model [s]",
      cxxopts::value<double>()->default_value("600"))
     ("a,albedo", "Albedo for model",
-     cxxopts::value<double>()->default_value("0.12"))
+     cxxopts::value<std::string>()->default_value("0.12"))
     ("ti", "Thermal inertia", cxxopts::value<double>()->default_value("70.0"))
     ("T0", "Initial temperate", cxxopts::value<double>()->default_value("233.0"))
     ("output_dir", "Output file", cxxopts::value<std::string>())
@@ -326,7 +339,7 @@ int main(int argc, char * argv[]) {
   params.do_thermal = args["thermal"].as<bool>();
   params.quiet = args["quiet"].as<bool>();
   params.dt = args["dt"].as<double>();
-  params.albedo = args["albedo"].as<double>();
+  params.set_albedo(args["albedo"].as<std::string>());
   params.thermal_inertia = args["ti"].as<double>();
   params.initial_temperature = args["T0"].as<double>();
   if (args.count("output_dir") != 0) {

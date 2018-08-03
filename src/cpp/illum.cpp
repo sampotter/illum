@@ -28,7 +28,10 @@ illum_context::illum_context(boost::filesystem::path const & obj_path):
 illum_context::~illum_context() {}
 
 arma::sp_mat
-illum_context::compute_F(double offset) {
+illum_context::compute_F(
+  var_t<double, std::string> const & albedo,
+  double offset)
+{
   struct elt {
     elt(arma::uword i, arma::uword j, double F): i {i}, j {j}, F {F} {}
     arma::uword i, j;
@@ -210,7 +213,26 @@ illum_context::compute_F(double offset) {
    * here tells Armadillo not to sort the entries into column-major
    * ordering, since we've already done that above.
    */
-  return arma::sp_mat {locs, values, num_faces, num_faces, false};
+  arma::sp_mat F {locs, values, num_faces, num_faces, false};
+
+  /**
+   * Scale each row of F by the albedo. If the variant that holds the
+   * albedo is a double, we assume constant albedo and scale each row
+   * by the same number. Otherwise, we load the vector stored at the
+   * given path and do diagonal scaling.
+   */
+  if (double const * rho = boost::get<double>(&albedo)) {
+    F *= *rho;
+  }
+  else if (std::string const * path = boost::get<std::string>(&albedo)) {
+    arma::vec Rho;
+    Rho.load(*path);
+    for (arma::uword i = 0; i < F.n_rows; ++i) {
+      F.row(i) *= Rho(i);
+    }
+  }
+
+  return F;
 }
 
 /**
