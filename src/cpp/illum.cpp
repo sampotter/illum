@@ -9,8 +9,6 @@
 #include "obj_util.hpp"
 #include "sp_inds.hpp"
 
-#include <fastbvh>
-
 #if USE_TBB
 #  include <tbb/tbb.h>
 #endif
@@ -20,109 +18,17 @@
 #include <unordered_map>
 #include <vector>
 
-struct illum_context::impl
-{
-  impl(std::vector<Object *> objects):
-    objects {objects},
-    bvh_objects(objects.begin(), objects.end()),
-    bvh {&bvh_objects},
-    num_faces {objects.size()}
-  {}
-
-  arma::sp_mat compute_F(double offset = 1e-5);
-
-  void make_horizons(
-    int nphi = 361,
-    double theta_eps = 1e-3,
-    double offset = 1e-5,
-    opt_t<int> j0 = opt_t <int> {},
-    opt_t<int> j1 = opt_t <int> {});
-
-  void save_horizons(
-    boost::filesystem::path const & path,
-    opt_t<int> i0,
-    opt_t<int> i1) const;
-
-  void load_horizons(
-    boost::filesystem::path const & path,
-    opt_t<int> i0,
-    opt_t<int> i1);
-  
-  arma::vec get_direct_radiosity(
-    arma::vec const & sun_position,
-    arma::mat const & disk_xy,
-    opt_t<int> const & j0,
-    opt_t<int> const & j1);
-
-  int get_num_faces() const {
-    return num_faces;
-  }
-
-  std::vector<Object *> objects;
-  std::vector<Object *> bvh_objects;
-  BVH bvh;
-  size_t num_faces;
-  arma::mat horizons;
-};
-
-illum_context::illum_context(char const * path, int shape_index):
-  pimpl {new illum_context::impl {obj_util::get_objects(path, shape_index)}}
+illum_context::illum_context(boost::filesystem::path const & obj_path):
+  objects {obj_util::get_objects(obj_path.c_str(), 0)},
+  bvh_objects {objects.begin(), objects.end()},
+  bvh {&bvh_objects},
+  num_faces {objects.size()}
 {}
 
-illum_context::~illum_context() = default;
+illum_context::~illum_context() {}
 
 arma::sp_mat
-illum_context::compute_F(double offset)
-{
-  return pimpl->compute_F(offset);
-}
-
-void
-illum_context::make_horizons(
-  int nphi,
-  double theta_eps,
-  double offset,
-  opt_t<int> j0,
-  opt_t<int> j1)
-{
-  pimpl->make_horizons(nphi, theta_eps, offset, j0, j1);
-}
-
-void
-illum_context::save_horizons(
-  boost::filesystem::path const & path,
-  opt_t<int> i0,
-  opt_t<int> i1) const
-{
-  pimpl->save_horizons(path, i0, i1);
-}
-
-void
-illum_context::load_horizons(
-  boost::filesystem::path const & path,
-  opt_t<int> i0,
-  opt_t<int> i1)
-{
-  pimpl->load_horizons(path, i0, i1);
-}
-
-arma::vec
-illum_context::get_direct_radiosity(
-  arma::vec const & sun_position,
-  arma::mat const & disk_xy,
-  opt_t<int> j0,
-  opt_t<int> j1)
-{
-  return pimpl->get_direct_radiosity(sun_position, disk_xy, j0, j1);
-}
-
-int
-illum_context::get_num_faces() const {
-  return pimpl->get_num_faces();
-}
-
-arma::sp_mat
-illum_context::impl::compute_F(double offset) {
+illum_context::compute_F(double offset) {
   struct elt {
     elt(arma::uword i, arma::uword j, double F): i {i}, j {j}, F {F} {}
     arma::uword i, j;
@@ -395,7 +301,7 @@ trace_horizon(
 }
 
 void
-illum_context::impl::make_horizons(
+illum_context::make_horizons(
   int nphi,
   double theta_eps,
   double offset,
@@ -403,29 +309,51 @@ illum_context::impl::make_horizons(
   opt_t<int> j1)
 {
   auto phis = arma::linspace(0, 2*arma::datum::pi, nphi);
-
   int nhoriz = j1.value_or(num_faces) - j0.value_or(0);
   horizons.set_size(nphi, nhoriz);
 
-  auto const compute_horizon = [&] (int j) {
-    auto tri = static_cast<Tri const *>(objects[j]);
-    horizons.col(j - j0.value_or(0)) = trace_horizon(tri, bvh, phis, theta_eps, offset);
-  };
-
+  if (horizon_obj_path) {
+    std::vector<Object *> horizon_objects =
+      obj_util::get_objects(horizon_obj_path->c_str(), 0);
+    std::vector<Object *> horizon_bvh_objects {
+      horizon_objects.begin(), horizon_objects.end()};
+    BVH horizon_bvh(&horizon_bvh_objects);
+    auto const compute_horizon = [&] (int j) {
+      auto tri = static_cast<Tri const *>(objects[j]);
+      horizons.col(j - j0.value_or(0)) = 
+        trace_horizon(tri, horizon_bvh, phis, theta_eps, offset);
+    };
 #if USE_TBB
-  tbb::parallel_for(
-    size_t(j0.value_or(0)),
-    size_t(j1.value_or(num_faces)),
-    compute_horizon);
+    tbb::parallel_for(
+      size_t(j0.value_or(0)),
+      size_t(j1.value_or(num_faces)),
+      compute_horizon);
 #else
-  for (int j = j0.value_or(0); j < j1.value_or(num_faces); ++j) {
-    compute_horizon(j);
-  }
+    for (int j = j0.value_or(0); j < j1.value_or(num_faces); ++j) {
+      compute_horizon(j);
+    }
 #endif
+  } else {
+    auto const compute_horizon = [&] (int j) {
+      auto tri = static_cast<Tri const *>(objects[j]);
+      horizons.col(j - j0.value_or(0)) =
+        trace_horizon(tri, bvh, phis, theta_eps, offset);
+    };
+#if USE_TBB
+    tbb::parallel_for(
+      size_t(j0.value_or(0)),
+      size_t(j1.value_or(num_faces)),
+      compute_horizon);
+#else
+    for (int j = j0.value_or(0); j < j1.value_or(num_faces); ++j) {
+      compute_horizon(j);
+    }
+#endif
+  }
 }
 
 void
-illum_context::impl::save_horizons(
+illum_context::save_horizons(
   boost::filesystem::path const & path,
   opt_t<int> i0,
   opt_t<int> i1) const
@@ -434,7 +362,7 @@ illum_context::impl::save_horizons(
 }
 
 void
-illum_context::impl::load_horizons(
+illum_context::load_horizons(
   boost::filesystem::path const & path,
   opt_t<int> i0,
   opt_t<int> i1)
@@ -448,11 +376,11 @@ arma::vec::fixed<3> get_centroid(Object const * obj) {
 }
 
 arma::vec
-illum_context::impl::get_direct_radiosity(
+illum_context::get_direct_radiosity(
   arma::vec const & sun_position,
   arma::mat const & disk_XY,
-  opt_t<int> const & j0,
-  opt_t<int> const & j1)
+  opt_t<int> j0,
+  opt_t<int> j1)
 {
   using namespace arma;
 

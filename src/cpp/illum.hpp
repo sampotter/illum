@@ -4,16 +4,24 @@
 #include "config.hpp"
 
 #include <armadillo>
-#include <memory>
-
 #include <boost/filesystem.hpp>
 #include <boost/optional.hpp>
+#include <fastbvh>
+#include <memory>
 
 template <class T>
 using opt_t = boost::optional<T>;
 
 struct illum_context {
-  illum_context(char const * path, int shape_index = 0);
+  illum_context();
+
+  illum_context(
+    boost::filesystem::path const & obj_path);
+
+  illum_context(
+    boost::filesystem::path const & obj_path,
+    boost::filesystem::path const & horizon_obj_path);
+
   ~illum_context();
 
   arma::sp_mat compute_F(double offset = 1e-5);
@@ -41,11 +49,24 @@ struct illum_context {
     opt_t<int> j0,
     opt_t<int> j1);
 
-  int get_num_faces() const;
-  
+  inline int get_num_faces() const {
+    return num_faces;
+  }
+
+  inline void set_horizon_obj_file(boost::filesystem::path const & path) {
+    horizon_obj_path = path;
+  }
+
 private:
-  struct impl;
-  std::unique_ptr<impl> pimpl;
+  
+  std::vector<Object *> objects;
+  std::vector<Object *> bvh_objects;
+  BVH bvh;
+
+  opt_t<boost::filesystem::path> horizon_obj_path;
+
+  size_t num_faces;
+  arma::mat horizons;
 };
 
 void fib_spiral(arma::mat & xy, int n);

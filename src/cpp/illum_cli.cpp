@@ -38,6 +38,7 @@ struct job_params {
   double offset, theta_eps;
   int nphi, gs_steps;
   opt_t<std::string> output_dir, horizon_file, sun_pos_file;
+  opt_t<std::string> horizon_obj_file;
   bool do_radiosity, print_residual, do_thermal, quiet;
   double dt, albedo, thermal_inertia, initial_temperature;
 
@@ -255,8 +256,6 @@ int main(int argc, char * argv[]) {
     ("h,help", "Display usage")
     ("task", "Task to do", cxxopts::value<std::string>())
     ("p,path", "Path to input OBJ file", cxxopts::value<std::string>())
-    ("s,shape", "Shape index in OBJ file",
-     cxxopts::value<int>()->default_value("0"))
     ("o,offset",
      "Offset when calculating visibility from a triangle",
      cxxopts::value<double>()->default_value("1e-5"))
@@ -285,6 +284,8 @@ int main(int argc, char * argv[]) {
     ("T0", "Initial temperate", cxxopts::value<double>()->default_value("233.0"))
     ("output_dir", "Output file", cxxopts::value<std::string>())
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
+    ("horizon_obj_file", "Path of OBJ file to use to compute horizon maps",
+     cxxopts::value<std::string>())
     ("sun_pos_file", "File containing sun positions",
      cxxopts::value<std::string>())
     ("sun_unit", "Units used for sun positions",
@@ -305,7 +306,6 @@ int main(int argc, char * argv[]) {
    */
   auto task = args["task"].as<std::string>();
   auto path = args["path"].as<std::string>();
-  auto shape_index = args["shape"].as<int>();
 
   /**
    * Parse options which are job parameters.
@@ -328,6 +328,9 @@ int main(int argc, char * argv[]) {
   }
   if (args.count("horizon_file") != 0) {
     params.horizon_file = args["horizon_file"].as<std::string>();
+  }
+  if (args.count("horizon_obj_file") != 0) {
+    params.horizon_obj_file = args["horizon_obj_file"].as<std::string>();
   }
   if (args.count("sun_pos_file") != 0) {
     params.sun_pos_file = args["sun_pos_file"].as<std::string>();
@@ -357,7 +360,10 @@ int main(int argc, char * argv[]) {
   MPI_Comm_rank(comm, &mpi_rank);  
 #endif
 
-  illum_context context {path.c_str(), shape_index};
+  illum_context context {path};
+  if (params.horizon_obj_file) {
+    context.set_horizon_obj_file(*params.horizon_obj_file);
+  }
 
   if (task == "horizons") do_horizons_task(params, context);
   else if (task == "radiosity") do_radiosity_task(params, context);
