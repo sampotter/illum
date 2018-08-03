@@ -255,7 +255,8 @@ int main(int argc, char * argv[]) {
   options.add_options()
     ("h,help", "Display usage")
     ("task", "Task to do", cxxopts::value<std::string>())
-    ("p,path", "Path to input OBJ file", cxxopts::value<std::string>())
+    ("p,path", "Path to input OBJ file",
+     cxxopts::value<std::string>()->default_value("./vesta_xtiny.obj"))
     ("o,offset",
      "Offset when calculating visibility from a triangle",
      cxxopts::value<double>()->default_value("1e-5"))
@@ -293,10 +294,15 @@ int main(int argc, char * argv[]) {
     ("mesh_unit", "Units used by OBJ file vertices",
      cxxopts::value<std::string>()->default_value("km"));
 
+  if (argc == 1) {
+    std::cout << options.help() << std::endl;
+    std::exit(EXIT_SUCCESS);
+  }
+
   options.parse_positional({"task"});
 
   auto args = options.parse(argc, argv);
-  if (args["help"].as<bool>() || args["task"].count() == 0) {
+  if (args["help"].as<bool>()) {
     std::cout << options.help() << std::endl;
     std::exit(EXIT_SUCCESS);
   }
