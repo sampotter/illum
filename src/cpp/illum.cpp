@@ -451,7 +451,6 @@ illum_context::get_direct_radiosity(
       constants::ONE_AU_KM/arma::norm(sun_position), 2);
 
     assert(0 <= direct(dir_ind));
-    assert(direct(dir_ind) <= 1);
   };
 
 #if USE_TBB
