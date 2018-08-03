@@ -39,13 +39,13 @@ if __name__ == '__main__':
         raise Exception('mismatched sizes')
 
     print('- upsampling source data to target mesh')
-    kd_src = scipy.spatial.KDTree(P_src)
+    kd_src = scipy.spatial.cKDTree(P_src)
     for i_tgt, p in enumerate(P_tgt):
         i_src = kd_src.query(p)[1]
         data_tgt[i_tgt] = data_src[i_src]
 
     print('- smoothing data')
-    kd_tgt = scipy.spatial.KDTree(P_tgt)
+    kd_tgt = scipy.spatial.cKDTree(P_tgt)
     for i_tgt, p in enumerate(P_tgt):
         stencil = kd_tgt.query(p, 5)[1]
         data_tgt[i_tgt] = np.mean(data_tgt[stencil])
