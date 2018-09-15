@@ -1,6 +1,7 @@
 #ifndef __THERMAL_HPP__
 #define __THERMAL_HPP__
 
+#include "common.hpp"
 #include "conduction.hpp"
 
 struct thermal_model {
@@ -12,7 +13,7 @@ struct thermal_model {
   thermal_model(
     int nfaces,
     double thermal_inertia = 70.0,
-    double init_temp = 233.0)
+    var_t<double, std::string> const & init_temp = 233.0)
   {
     z = {
       0.00197, 0.00434, 0.00718, 0.01060, 0.01469, 0.01960, 0.02549, 0.03257,
@@ -38,8 +39,18 @@ struct thermal_model {
 
     F.zeros(nfaces);
 
-    T.set_size(nz + 1, nfaces);
-    T.fill(init_temp);
+    if (double const * T0 = boost::get<double>(&init_temp)) {
+      T.set_size(nz + 1, nfaces);
+      T.fill(*T0);
+    }
+    else if (std::string const * path = boost::get<std::string>(&init_temp)) {
+      T.load(*path);
+      if (T.n_rows != static_cast<arma::uword>(nz + 1) ||
+          T.n_cols != static_cast<arma::uword>(nfaces)) {
+        throw std::runtime_error {
+          "initial temperature profile is an incompatible size"};
+      }
+    }
   }
 
   arma::vec get_radiosity() const {

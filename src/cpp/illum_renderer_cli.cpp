@@ -38,6 +38,8 @@ int main(int argc, char * argv[])
     ("i,img_path", "Output file path",
      value<std::string>()->default_value("img.png"))
     ("shape_index", "OBJ file shape index", value<int>()->default_value("0"))
+    ("l,layer", "Which layer (column) of the input data to plot",
+     value<arma::uword>()->default_value("0"))
     ("W,width", "Image width [px]", value<int>()->default_value("512"))
     ("H,height", "Image height [px]", value<int>()->default_value("512"))
     ("m,min_value", "Minimum value for plot range", value<double>())
@@ -69,6 +71,7 @@ int main(int argc, char * argv[])
   std::string img_path = args["img_path"].as<std::string>();
 
   int shape_index = args["shape_index"].as<int>();
+  arma::uword layer = args["layer"].as<arma::uword>();
   int width = args["width"].as<int>();
   int height = args["height"].as<int>();
   double az_cam = args["az_cam"].as<double>();
@@ -100,8 +103,10 @@ int main(int argc, char * argv[])
     throw std::runtime_error("plot radius not implemented yet");
   }
 
-  arma::vec data;
-  data.load(*data_path);
+  arma::mat data_matrix;
+  data_matrix.load(*data_path);
+
+  arma::vec data = data_matrix.col(layer);
   if (min_value) {
     for (arma::uword i = 0; i < data.n_elem; ++i) {
       data(i) = std::max(*min_value, data(i));
@@ -114,6 +119,10 @@ int main(int argc, char * argv[])
   }
   
   auto objects = obj_util::get_objects(obj_path.c_str(), shape_index);
+
+  if (data.n_elem != objects.size()) {
+    throw std::runtime_error {"input data and mesh have incompatible sizes"};
+  }
 
   Vector3 c_model {0., 0., 0.};
   for (auto obj: objects) {
@@ -135,8 +144,6 @@ int main(int argc, char * argv[])
 
   az_cam *= PI/180;
   el_cam *= PI/180;
-
-  std::cout << az_cam << ", " << el_cam << std::endl;
 
   if (r_cam == 0) {
     std::cerr << "r_cam is uninitialized somehow" << std::endl;
@@ -192,9 +199,6 @@ int main(int argc, char * argv[])
 
     double lo = min_value ? *min_value : data.min();
     double hi = max_value ? *max_value : data.max();
-
-    std::cout << hi << std::endl;
-    std::cout << lo << std::endl;
 
     for (auto & elt: elts) {
       elt.value -= lo;

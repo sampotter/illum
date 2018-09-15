@@ -39,7 +39,7 @@ struct job_params {
   int nphi, gs_steps;
   opt_t<std::string> output_dir, horizon_file, sun_pos_file;
   opt_t<std::string> horizon_obj_file;
-  bool do_radiosity, print_residual, do_thermal, quiet;
+  bool do_radiosity, print_residual, do_thermal, quiet, save_full_thermal_model;
   double dt, thermal_inertia, initial_temperature;
   var_t<double, std::string> albedo;
 
@@ -233,9 +233,16 @@ void do_radiosity_task(job_params & params, illum_context & context) {
     });
 
     if (params.do_thermal) {
-      timed("- saving thermal", [&] () {
-        arma_util::save_mat(therm, output_dir_path/"therm", i0, i1);
-      });
+      if (params.save_full_thermal_model) {
+        timed("- saving full thermal model", [&] () {
+          arma_util::save_mat(
+            therm_model.T.t(), output_dir_path/"therm", i0, i1);
+        });
+      } else {
+        timed("- saving thermal", [&] () {
+          arma_util::save_mat(therm, output_dir_path/"therm", i0, i1);
+        });
+      }
 
       timed("- saving average thermal", [&] () {
         arma_util::save_mat(therm_avg, output_dir_path/"therm_avg", i0, i1);
@@ -305,7 +312,11 @@ int main(int argc, char * argv[]) {
     ("sun_unit", "Units used for sun positions",
      cxxopts::value<std::string>()->default_value("m"))
     ("mesh_unit", "Units used by OBJ file vertices",
-     cxxopts::value<std::string>()->default_value("km"));
+     cxxopts::value<std::string>()->default_value("km"))
+    ("save_full_thermal_model",
+     "Save all layers of the thermal model as opposed to only the top layer",
+     cxxopts::value<bool>()->default_value("false"))
+    ;
 
   if (argc == 1) {
     std::cout << options.help() << std::endl;
@@ -356,6 +367,7 @@ int main(int argc, char * argv[]) {
   }
   params.sun_unit = args["sun_unit"].as<std::string>();
   params.mesh_unit = args["mesh_unit"].as<std::string>();
+  params.save_full_thermal_model = args["save_full_thermal_model"].as<bool>();
 
   assert(params.sun_unit == "m" || params.sun_unit == "km");
   assert(params.mesh_unit == "m" || params.mesh_unit == "km");
