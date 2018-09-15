@@ -5,6 +5,7 @@ project (illum)
 enable_language (CXX Fortran)
 
 option (BUILD_RENDERER "Build the command-line renderer" ON)
+option (USE_EMBREE "Use Embree for ray-tracing" ON)
 option (USE_MPI "Use MPI to distribute" OFF)
 option (USE_TBB "Use TBB to parallelize" OFF)
 
@@ -19,6 +20,11 @@ find_package (Boost 1.60 REQUIRED COMPONENTS system filesystem)
 if (BUILD_RENDERER)
   find_library (pngpp_LIBRARY png++)
   find_package (PNG REQUIRED)
+  # TODO: optionally use Embree for Renderer, as well
+endif ()
+
+if (USE_EMBREE)
+  find_package (embree 3.0 REQUIRED)
 endif ()
 
 if (USE_MPI)
@@ -50,7 +56,11 @@ target_sources (illum PRIVATE illum.cpp arma_util.cpp conduction.cpp
 target_include_directories (illum PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries (illum PUBLIC armadillo)
 target_link_libraries (illum PRIVATE conduction)
-target_link_libraries (illum PUBLIC fastbvh)
+if (USE_EMBREE)
+  target_include_directories (illum PRIVATE ${EMBREE_INCLUDE_DIRS})
+  target_link_libraries (illum PRIVATE ${EMBREE_LIBRARY})
+endif ()
+target_link_libraries (illum PRIVATE fastbvh)
 if (USE_TBB)
   target_link_libraries (illum PRIVATE ${TBB_IMPORTED_TARGETS})
 endif ()

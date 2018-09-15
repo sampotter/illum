@@ -77,13 +77,8 @@ obj_util::get_objects(
       n = -n;
     }
 
-    // auto const n = normalize(Vector3 {
-    //   N[3*i0.vertex_index] + N[3*i1.vertex_index] + N[3*i2.vertex_index],
-    //   N[3*i0.vertex_index + 1] + N[3*i1.vertex_index + 1] + N[3*i2.vertex_index + 1],
-    //   N[3*i0.vertex_index + 2] + N[3*i1.vertex_index + 2] + N[3*i2.vertex_index + 2]
-    // });
-
-    // objects.push_back(new Tri(v0, v1, v2, n, i/3));
+    // TODO: Why am I dividing by 100 here? Almost certainly shouldn't
+    // be doing this!
     objects.push_back(new Tri(v0/100., v1/100., v2/100., n, i/3));
   }
 
