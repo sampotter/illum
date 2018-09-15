@@ -84,6 +84,12 @@ if (USE_MPI)
 endif ()
 target_compile_features (illum_cli PRIVATE cxx_std_14)
 
+add_custom_command (
+  TARGET illum_cli
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy
+  ${CMAKE_SOURCE_DIR}/../../data/vesta_xtiny.obj ${CMAKE_CURRENT_BINARY_DIR})
+
 if (BUILD_RENDERER)
   add_executable (illum_renderer_cli)
   target_compile_options (illum_renderer_cli PRIVATE -Wall -Wextra -Wpedantic -Werror)

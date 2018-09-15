@@ -10,11 +10,22 @@ def fromfile(path, dtype=np.float64):
         dims = tuple(map(int, f.readline().split()))
         return np.fromfile(f, dtype=dtype).reshape(*dims)
 
+def get_dtype_str(dtype):
+    dtype2str = {
+        np.complex128: b'FC016',
+        np.float64: b'FN008',
+        np.uint32: b'IU004',
+        np.uint64: b'IU008',
+        np.int64: b'IS008',
+    }
+    if dtype.type not in dtype2str:
+        raise Exception('Invalid datatype')
+    else:
+        return dtype2str[dtype.type]
+
 def tofile(X, path):
-    if X.dtype != np.float64:
-        raise Exception('Only implemented for float64 so far')
     with open(path, 'wb') as f:
-        f.write(b'ARMA_MAT_BIN_FN008\n')
+        f.write(b'ARMA_MAT_BIN_%s\n' % get_dtype_str(X.dtype))
         if X.ndim == 1:
             f.write(b'%d\n' % X.size)
         elif X.ndim == 2:
