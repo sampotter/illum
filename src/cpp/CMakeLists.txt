@@ -50,7 +50,7 @@ target_sources (illum PRIVATE illum.cpp arma_util.cpp conduction.cpp
 target_include_directories (illum PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries (illum PUBLIC armadillo)
 target_link_libraries (illum PRIVATE conduction)
-target_link_libraries (illum PRIVATE fastbvh)
+target_link_libraries (illum PUBLIC fastbvh)
 if (USE_TBB)
   target_link_libraries (illum PRIVATE ${TBB_IMPORTED_TARGETS})
 endif ()
