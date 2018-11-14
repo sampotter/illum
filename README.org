@@ -1,5 +1,4 @@
 ** Obtaining the sources
-
    When cloning this repository, make sure to update and initialize
    the submodules that it depends on, as well.
    #+BEGIN_SRC sh
@@ -7,13 +6,18 @@
    cd illum
    git submodule update --init
    #+END_SRC
-
+** Other dependencies
+   The command-line renderer depends on the [[http://www.nongnu.org/pngpp/][png++]] C++ library.
 ** Caveats
    At the time this comment was written (7/23/18), there was a bug
    with GCC 8 which was causing problems with Armadillo. If you try
    compiling with GCC 8, you may encounter ~unused-but-set-variable~
    warnings coming from ~glue_times_meat.hpp~ in the Armadillo
    submodule.
+*** Fortran
+	There are several Fortran files which need to be compiled. We have
+	only tested this software with [[https://gcc.gnu.org/wiki/GFortran][GFortran]] and can't comment on other
+	Fortran compilers, though they should work.
 ** Compiling
 
    The C++ sources are all in ~src/cpp~, and the build system is
