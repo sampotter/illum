@@ -13,3 +13,6 @@
 [submodule "src/cpp/armadillo"]
 	path = src/cpp/armadillo
 	url = https://gitlab.com/conradsnicta/armadillo-code.git
+[submodule "src/cpp/yaml-cpp"]
+	path = src/cpp/yaml-cpp
+	url = https://github.com/jbeder/yaml-cpp.git

@@ -1,6 +1,7 @@
 #include "common.hpp"
 
 #include <cxxopts.hpp>
+#include <yaml-cpp/yaml.h>
 
 #include "arma_util.hpp"
 #include "constants.hpp"
@@ -35,16 +36,57 @@ void file_exists_or_die(std::string const & filename) {
 }
 
 struct job_params {
-  double offset, theta_eps;
-  int nphi, gs_steps;
-  opt_t<std::string> output_dir, horizon_file, sun_pos_file;
+  static job_params from_yaml(std::string const & path_str) {
+    job_params params;
+
+    YAML::Node config = YAML::LoadFile(path_str.c_str());
+
+    if (config["radiosity"]) {
+      params.do_radiosity = config["radiosity"];
+    }
+
+    if (config["print_residual"]) {
+      params.print_residual = config["print_residual"];
+    }
+
+    if (config["thermal"]) {
+      params.do_thermal = config["thermal"];
+    }
+
+    if (config["quiet"]) {
+      params.quiet = config["quiet"];
+    }
+
+    return params;
+  }
+
+  opt_t<double> offset;
+  opt_t<double> theta_eps;
+  opt_t<int> nphi;
+  opt_t<int> gs_steps;
+
+  opt_t<std::string> output_dir;
+  opt_t<std::string> horizon_file;
+  opt_t<std::string> sun_pos_file;
   opt_t<std::string> horizon_obj_file;
-  bool do_radiosity, print_residual, do_thermal, quiet, save_full_thermal_model;
-  double dt, thermal_inertia, initial_temperature;
-  var_t<double, std::string> albedo;
+  opt_t<std::string> therm_stats_file;
+
+  opt_t<bool> do_radiosity;
+  opt_t<bool> print_residual;
+  opt_t<bool> do_thermal;
+  opt_t<bool> quiet;
+  opt_t<bool> save_full_thermal;
+  opt_t<bool> record_therm_stats;
+
+  opt_t<double> dt;
+  opt_t<double> thermal_inertia;
+
+  opt_t<var_t<double, std::string>> albedo;
+  opt_t<var_t<double, std::string>> initial_temperature;
 
   // TODO: should we use boost units for this eventually?
-  std::string sun_unit, mesh_unit;
+  opt_t<std::string> sun_unit;
+  opt_t<std::string> mesh_unit;
 
   void set_albedo(std::string const & s) {
     try {
@@ -72,13 +114,18 @@ void do_horizons_task(job_params & params, illum_context & context) {
   set_i0_and_i1(context.get_num_faces(), i0, i1);
 #endif
   timed("- building horizon map", [&] () {
-    context.make_horizons(params.nphi, params.theta_eps, params.offset, i0, i1);
+    context.make_horizons(
+      *params.nphi,
+      *params.theta_eps,
+      *params.offset,
+      i0,
+      i1);
   });
   boost::filesystem::path output_path {"horizons"};
   if (params.output_dir) {
     output_path = *params.output_dir/output_path;
   }
-  if (!params.quiet) {
+  if (!*params.quiet) {
     timed("- saving horizon map to " + output_path.string(), [&] () {
       context.save_horizons(output_path, i0, i1);
     });
@@ -104,7 +151,12 @@ void do_radiosity_task(job_params & params, illum_context & context) {
     });
   } else {
     timed("- building horizon map", [&] () {
-      context.make_horizons(params.nphi, params.theta_eps, params.offset, i0, i1);
+      context.make_horizons(
+        *params.nphi,
+        *params.theta_eps,
+        *params.offset,
+        i0,
+        i1);
     });
     nhoriz = nfaces;
   }
@@ -127,7 +179,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
   }
 
   // Rescale the sun positions as necessary
-  if (params.sun_unit == "m") {
+  if (*params.sun_unit == "m") {
     sun_positions /= 1000.;
   }
 
@@ -140,7 +192,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
   arma::vec therm, therm_avg, therm_max;
 
-  if (params.do_thermal) {
+  if (*params.do_thermal) {
     therm.resize(nfaces);
 
     therm_avg.resize(nfaces);
@@ -153,15 +205,18 @@ void do_radiosity_task(job_params & params, illum_context & context) {
   // TODO: only construct this if we actually need to use it
   thermal_model therm_model {
     nfaces,
-    params.thermal_inertia,
-    params.initial_temperature
+    *params.thermal_inertia,
+    *params.initial_temperature
   };
+  if (*params.record_therm_stats) {
+    therm_model.record_stats = true;
+  }
 
   arma::sp_mat F;
 
-  if (params.do_radiosity) {
+  if (*params.do_radiosity) {
     timed("- assembling form factor matrix", [&] () {
-      F = context.compute_F(params.albedo);
+      F = context.compute_F(*params.albedo);
       std::cout << " [nnz = " << F.n_nonzero << "]";
     });
 
@@ -179,7 +234,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
     /**
      * Incorporate heat flux at surface into radiosity.
      */
-    if (params.do_thermal) {
+    if (*params.do_thermal) {
       rad += therm_model.get_radiosity();
     }
 
@@ -189,16 +244,16 @@ void do_radiosity_task(job_params & params, illum_context & context) {
       std::cout << " [mean: " << arma::mean(rad) << " W/m^2]";
     });
 
-    if (params.do_radiosity) {
+    if (*params.do_radiosity) {
       arma::sp_mat L_t = (arma::speye(nfaces, nfaces) - arma::trimatl(F)).t();
       arma::sp_mat U = -arma::trimatu(F);
 
       arma::vec E = rad;
       rad = arma_util::forward_solve(L_t, E);
-      for (int iter = 0; iter < params.gs_steps; ++iter) {
+      for (int iter = 0; iter < *params.gs_steps; ++iter) {
         timed("  + doing Gauss-Seidel step", [&] () {
           rad = arma_util::forward_solve(L_t, E - U*rad);
-          if (params.print_residual) {
+          if (*params.print_residual) {
             double res = arma::norm((rad.t()*L_t).t() + U*rad - E);
             std::cout << " [res = " << res << "]";
           }
@@ -208,10 +263,10 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
     rad_avg += (rad - rad_avg)/(j + 1);
 
-    if (params.do_thermal) {
+    if (*params.do_thermal) {
       timed("- " + frame_str + ": stepping thermal model", [&] () {
         therm = therm_model.T.row(0).t();
-        therm_model.step(params.dt, rad);
+        therm_model.step(*params.dt, rad);
         therm_avg += (therm - therm_avg)/(j + 1);
         if (j > 50) {
           therm_max = arma::max(therm_max, therm);
@@ -223,7 +278,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
   boost::filesystem::path output_dir_path = params.output_dir ?
     *params.output_dir : ".";
 
-  if (!params.quiet) {
+  if (!*params.quiet) {
     timed("- saving radiosity", [&] () {
       arma_util::save_mat(rad, output_dir_path/"rad", i0, i1);
     });
@@ -232,11 +287,11 @@ void do_radiosity_task(job_params & params, illum_context & context) {
       arma_util::save_mat(rad_avg, output_dir_path/"rad_avg", i0, i1);
     });
 
-    if (params.do_thermal) {
-      if (params.save_full_thermal_model) {
+    if (*params.do_thermal) {
+      if (*params.save_full_thermal) {
         timed("- saving full thermal model", [&] () {
           arma_util::save_mat(
-            therm_model.T.t(), output_dir_path/"therm", i0, i1);
+            therm_model.T, output_dir_path/"therm", i0, i1);
         });
       } else {
         timed("- saving thermal", [&] () {
@@ -250,6 +305,14 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
       timed("- saving max thermal", [&] () {
         arma_util::save_mat(therm_max, output_dir_path/"therm_max", i0, i1);
+      });
+    }
+
+    // TODO: make this MPI aware? ... or not?
+    if (*params.record_therm_stats) {
+      timed("- saving thermal stats", [&] () {
+        auto path = (output_dir_path/"therm_stats.bin").string();
+        therm_model.get_stats_matrix().save(path);
       });
     }
   }
@@ -275,6 +338,8 @@ int main(int argc, char * argv[]) {
   options.add_options()
     ("h,help", "Display usage")
     ("task", "Task to do", cxxopts::value<std::string>())
+    ("c,config", "Path to YAML configuration file",
+     cxxopts::value<std::string>())
     ("p,path", "Path to input OBJ file",
      cxxopts::value<std::string>()->default_value("./vesta_xtiny.obj"))
     ("o,offset",
@@ -302,7 +367,8 @@ int main(int argc, char * argv[]) {
     ("a,albedo", "Albedo for model",
      cxxopts::value<std::string>()->default_value("0.12"))
     ("ti", "Thermal inertia", cxxopts::value<double>()->default_value("70.0"))
-    ("T0", "Initial temperate", cxxopts::value<double>()->default_value("233.0"))
+    ("T0", "Initial temperature",
+     cxxopts::value<std::string>()->default_value("233.0"))
     ("output_dir", "Output file", cxxopts::value<std::string>())
     ("horizon_file", "Horizon file", cxxopts::value<std::string>())
     ("horizon_obj_file", "Path of OBJ file to use to compute horizon maps",
@@ -313,8 +379,10 @@ int main(int argc, char * argv[]) {
      cxxopts::value<std::string>()->default_value("m"))
     ("mesh_unit", "Units used by OBJ file vertices",
      cxxopts::value<std::string>()->default_value("km"))
-    ("save_full_thermal_model",
+    ("save_full_thermal",
      "Save all layers of the thermal model as opposed to only the top layer",
+     cxxopts::value<bool>()->default_value("false"))
+    ("record_therm_stats", "Collect thermal statistics",
      cxxopts::value<bool>()->default_value("false"))
     ;
 
@@ -337,42 +405,110 @@ int main(int argc, char * argv[]) {
   auto task = args["task"].as<std::string>();
   auto path = args["path"].as<std::string>();
 
+  job_params params;
+
+  /**
+   * If a path to a configuration file is passed, we initialize params
+   * from this file. Any other options that are passed overwrite these
+   * parameters!
+   *
+   * TODO: in the future, we can probably support more than just YAML
+   * configuration files.
+   */
+  if (args.count("config") != 0) {
+    params = job_params::from_yaml(args["config"].as<std::string>());
+  }
+
   /**
    * Parse options which are job parameters.
    */
-  job_params params;
-  params.offset = args["offset"].as<double>();
-  params.theta_eps = args["eps"].as<double>();
-  params.nphi = args["nphi"].as<int>();
-  params.do_radiosity = args["radiosity"].as<bool>();
-  params.gs_steps = args["gs_steps"].as<int>();
-  params.print_residual = args["print_residual"].as<bool>();
-  params.do_thermal = args["thermal"].as<bool>();
-  params.quiet = args["quiet"].as<bool>();
-  params.dt = args["dt"].as<double>();
+
+  if (!params.offset) {
+    params.offset = args["offset"].as<double>();
+  }
+
+  if (!params.theta_eps) {
+    params.theta_eps = args["eps"].as<double>();
+  }
+
+  if (!params.nphi) {
+    params.nphi = args["nphi"].as<int>();
+  }
+
+  if (!params.do_radiosity) {
+    params.do_radiosity = args["radiosity"].as<bool>();
+  }
+
+  if (!params.gs_steps) {
+    params.gs_steps = args["gs_steps"].as<int>();
+  }
+
+  if (!params.print_residual) {
+    params.print_residual = args["print_residual"].as<bool>();
+  }
+
+  if (!params.do_thermal) {
+    params.do_thermal = args["thermal"].as<bool>();
+  }
+
+  if (!params.quiet) {
+    params.quiet = args["quiet"].as<bool>();
+  }
+
+  if (!params.dt) {
+    params.dt = args["dt"].as<double>();
+  }
+
   params.set_albedo(args["albedo"].as<std::string>());
-  params.thermal_inertia = args["ti"].as<double>();
-  params.initial_temperature = args["T0"].as<double>();
-  if (args.count("output_dir") != 0) {
+
+  if (!params.thermal_inertia) {
+    params.thermal_inertia = args["ti"].as<double>();
+  }
+
+  if (!params.initial_temperature) {
+    try {
+      params.initial_temperature = std::stod(args["T0"].as<std::string>());
+    } catch (...) {
+      params.initial_temperature = args["T0"].as<std::string>();
+    }
+  }
+
+  if (!params.output_dir && args.count("output_dir") != 0) {
     params.output_dir = args["output_dir"].as<std::string>();
   }
-  if (args.count("horizon_file") != 0) {
+
+  if (!params.horizon_file && args.count("horizon_file") != 0) {
     params.horizon_file = args["horizon_file"].as<std::string>();
   }
-  if (args.count("horizon_obj_file") != 0) {
+
+  if (!params.horizon_obj_file && args.count("horizon_obj_file") != 0) {
     params.horizon_obj_file = args["horizon_obj_file"].as<std::string>();
   }
-  if (args.count("sun_pos_file") != 0) {
+
+  if (!params.sun_pos_file && args.count("sun_pos_file") != 0) {
     params.sun_pos_file = args["sun_pos_file"].as<std::string>();
   }
-  params.sun_unit = args["sun_unit"].as<std::string>();
-  params.mesh_unit = args["mesh_unit"].as<std::string>();
-  params.save_full_thermal_model = args["save_full_thermal_model"].as<bool>();
 
-  assert(params.sun_unit == "m" || params.sun_unit == "km");
-  assert(params.mesh_unit == "m" || params.mesh_unit == "km");
+  if (!params.sun_unit) {
+    params.sun_unit = args["sun_unit"].as<std::string>();
+  }
 
-  if (params.mesh_unit == "m") {
+  if (!params.mesh_unit) {
+    params.mesh_unit = args["mesh_unit"].as<std::string>();
+  }
+
+  if (!params.save_full_thermal) {
+    params.save_full_thermal = args["save_full_thermal"].as<bool>();
+  }
+
+  if (!params.record_therm_stats) {
+    params.record_therm_stats = args["record_therm_stats"].as<bool>();
+  }
+
+  assert(*params.sun_unit == "m" || *params.sun_unit == "km");
+  assert(*params.mesh_unit == "m" || *params.mesh_unit == "km");
+
+  if (*params.mesh_unit == "m") {
     std::cout << "TODO: mesh_unit == m isn't implemented yet" << std::endl;
     std::exit(EXIT_FAILURE);
   }

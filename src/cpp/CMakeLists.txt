@@ -36,6 +36,7 @@ add_subdirectory (armadillo)
 add_subdirectory (cxxopts)
 add_subdirectory (fastbvh)
 add_subdirectory (tinyobjloader)
+add_subdirectory (yaml-cpp)
 
 configure_file (config.hpp.in config.hpp)
 
@@ -72,6 +73,7 @@ target_link_libraries (illum_cli PRIVATE illum)
 if (USE_MPI)
   target_link_libraries (illum_cli PRIVATE ${MPI_LIBRARIES})
 endif ()
+target_link_libraries (illum_cli PRIVATE yaml-cpp)
 target_compile_features (illum_cli PRIVATE cxx_std_14)
 
 add_custom_command (

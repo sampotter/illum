@@ -1,0 +1,7 @@
+# Testing, testing
+
+radiosity: true
+print_residual: true
+thermal: true
+quiet: false
+
