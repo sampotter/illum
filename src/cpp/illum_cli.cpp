@@ -265,8 +265,8 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
     if (*params.do_thermal) {
       timed("- " + frame_str + ": stepping thermal model", [&] () {
-        therm = therm_model.T.row(0).t();
         therm_model.step(*params.dt, rad);
+        therm = therm_model.T.row(0).t();
         therm_avg += (therm - therm_avg)/(j + 1);
         if (j > 50) {
           therm_max = arma::max(therm_max, therm);
