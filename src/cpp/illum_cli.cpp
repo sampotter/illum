@@ -42,19 +42,31 @@ struct job_params {
     YAML::Node config = YAML::LoadFile(path_str.c_str());
 
     if (config["radiosity"]) {
-      params.do_radiosity = config["radiosity"];
+      params.do_radiosity = config["radiosity"].as<bool>();
     }
 
     if (config["print_residual"]) {
-      params.print_residual = config["print_residual"];
+      params.print_residual = config["print_residual"].as<bool>();
     }
 
     if (config["thermal"]) {
-      params.do_thermal = config["thermal"];
+      params.do_thermal = config["thermal"].as<bool>();
     }
 
     if (config["quiet"]) {
-      params.quiet = config["quiet"];
+      params.quiet = config["quiet"].as<bool>();
+    }
+
+    if (config["depths"]) {
+      params.depths = config["depths"].as<std::vector<double>>();
+    }
+
+    if (config["rhoc"]) {
+      if (config["rhoc"].IsSequence()) {
+        params.rhoc = config["rhoc"].as<std::vector<double>>();
+      } else {
+        params.rhoc = config["rhoc"].as<double>();
+      }
     }
 
     return params;
@@ -78,8 +90,10 @@ struct job_params {
   opt_t<bool> save_full_thermal;
   opt_t<bool> record_therm_stats;
 
+  opt_t<std::vector<double>> depths;
   opt_t<double> dt;
   opt_t<double> thermal_inertia;
+  opt_t<var_t<double, std::vector<double>>> rhoc;
 
   opt_t<var_t<double, std::string>> albedo;
   opt_t<var_t<double, std::string>> initial_temperature;
@@ -98,6 +112,59 @@ struct job_params {
       std::cerr << "albedo value " << s << " is out of range" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+  }
+
+  void display() const {
+    using std::cout;
+    using std::endl;
+    cout << "offset: " << *offset << endl
+         << "theta_eps: " << *theta_eps << endl
+         << "nphi: " << *nphi << endl
+         << "gs_steps: " << *gs_steps << endl
+         << "output_dir: " << (output_dir ? *output_dir : "N/A") << endl
+         << "horizon_file: " << (horizon_file ? *horizon_file : "N/A") << endl
+         << "sun_pos_file: " << (sun_pos_file ? *sun_pos_file : "N/A") << endl
+         << "horizon_obj_file: " << (
+           horizon_obj_file ? *horizon_obj_file : "N/A")
+         << endl
+         << "therm_stats_file: " << (
+           therm_stats_file ? *therm_stats_file : "N/A")
+         << endl
+         << "radiosity: " << *do_radiosity << endl
+         << "print_residual: " << *print_residual << endl
+         << "do_thermal: " << *do_thermal << endl
+         << "quiet: " << *quiet << endl
+         << "save_full_thermal: " << *save_full_thermal << endl
+         << "record_therm_stats: " << *record_therm_stats << endl
+         << "depths: ";
+    if (depths) {
+      for (decltype(depths->size()) i = 0; i < depths->size() - 1; ++i)
+        cout << (*depths)[i] << ", ";
+      cout << (*depths)[depths->size() - 1];
+    } else {
+      cout << "N/A";
+    }
+    cout << endl
+         << "dt: " << *dt << endl
+         << "ti: " << *thermal_inertia << endl
+         << "rhoc: ";
+    if (rhoc) {
+      if (auto r = boost::get<double>(&*rhoc)) {
+        cout << *r;
+      } else {
+        auto rs = boost::get<std::vector<double>>(&*rhoc);
+        for (decltype(rs->size()) i = 0; i < rs->size() - 1; ++i)
+          cout << (*rs)[i] << ", ";
+        cout << (*rs)[rs->size() - 1];
+      }
+    } else {
+      cout << "N/A";
+    }
+    cout << endl
+         << "albedo: " << *albedo << endl
+         << "T0: " << *initial_temperature << endl
+         << "sun_unit: " << *sun_unit << endl
+         << "mesh_unit: " << *mesh_unit << endl;
   }
 };
 
@@ -205,7 +272,9 @@ void do_radiosity_task(job_params & params, illum_context & context) {
   // TODO: only construct this if we actually need to use it
   thermal_model therm_model {
     nfaces,
+    *params.depths,
     *params.thermal_inertia,
+    *params.rhoc,
     *params.initial_temperature
   };
   if (*params.record_therm_stats) {
@@ -366,7 +435,12 @@ int main(int argc, char * argv[]) {
      cxxopts::value<double>()->default_value("600"))
     ("a,albedo", "Albedo for model",
      cxxopts::value<std::string>()->default_value("0.12"))
-    ("ti", "Thermal inertia", cxxopts::value<double>()->default_value("70.0"))
+    ("depths", "Depths for layers in thermal models [m]",
+     cxxopts::value<std::vector<double>>())
+    ("ti", "Thermal inertia [J m^-2 K^-1 s^-1/2]",
+     cxxopts::value<double>()->default_value("70.0"))
+    ("rhoc", "Heat capacity per volume [J m^-3]",
+     cxxopts::value<std::vector<double>>())
     ("T0", "Initial temperature",
      cxxopts::value<std::string>()->default_value("233.0"))
     ("output_dir", "Output file", cxxopts::value<std::string>())
@@ -383,6 +457,8 @@ int main(int argc, char * argv[]) {
      "Save all layers of the thermal model as opposed to only the top layer",
      cxxopts::value<bool>()->default_value("false"))
     ("record_therm_stats", "Collect thermal statistics",
+     cxxopts::value<bool>()->default_value("false"))
+    ("print_config", "Print configuration before running",
      cxxopts::value<bool>()->default_value("false"))
     ;
 
@@ -455,6 +531,10 @@ int main(int argc, char * argv[]) {
     params.quiet = args["quiet"].as<bool>();
   }
 
+  if (!params.depths && args.count("depths") != 0) {
+    params.depths = args["depths"].as<std::vector<double>>();
+  }
+
   if (!params.dt) {
     params.dt = args["dt"].as<double>();
   }
@@ -463,6 +543,15 @@ int main(int argc, char * argv[]) {
 
   if (!params.thermal_inertia) {
     params.thermal_inertia = args["ti"].as<double>();
+  }
+
+  if (!params.rhoc && args.count("rhoc") != 0) {
+    auto rhoc = args["rhoc"].as<std::vector<double>>();
+    if (rhoc.size() == 1) {
+      params.rhoc = rhoc[0];
+    } else {
+      params.rhoc = rhoc;
+    }
   }
 
   if (!params.initial_temperature) {
@@ -514,6 +603,23 @@ int main(int argc, char * argv[]) {
   }
 
   /**
+   * Error and consistency checking
+   */
+  if (params.do_thermal && *params.do_thermal) {
+    if (!params.depths) {
+      std::cerr << "When running a thermal model provide layer levels using "
+                << "the --depths flag" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+
+    if (!params.rhoc) {
+      std::cerr << "When running a thermal model provide volumetric heat "
+                << "capacity values using the --rhoc flag" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+
+  /**
    * Check that the task that the user request is valid.
    */
   if (tasks.find(task) == tasks.end()) {
@@ -527,6 +633,10 @@ int main(int argc, char * argv[]) {
   MPI_Comm_rank(comm, &mpi_rank);  
 #endif
 
+  if (args["print_config"].as<bool>()) {
+    params.display();
+  }
+  
   illum_context context {path};
   if (params.horizon_obj_file) {
     context.set_horizon_obj_file(*params.horizon_obj_file);

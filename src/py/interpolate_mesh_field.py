@@ -7,6 +7,8 @@ if __name__ == '__main__':
     p.add_argument('source_field_path', type=str)
     p.add_argument('target_mesh_path', type=str)
     p.add_argument('target_field_path', type=str)
+    p.add_argument('--fix', action='store_true')
+    p.add_argument('--save_layers', action='store_true')
     args = p.parse_args()
 
 import arma
@@ -23,35 +25,54 @@ def get_centroids(path):
 if __name__ == '__main__':
 
     print('- loading source mesh')
-    P_src = get_centroids(args.source_mesh_path)
+    P = get_centroids(args.source_mesh_path)
 
     print('- loading target mesh')
-    P_tgt = get_centroids(args.target_mesh_path)
+    Q = get_centroids(args.target_mesh_path)
 
     print('- loading source data')
-    data_src = arma.fromfile(args.source_field_path)
-    data_tgt = np.full(P_tgt.shape[0], np.nan, dtype=data_src.dtype)
+    X = arma.fromfile(args.source_field_path)
 
-    if data_src.ndim != 1 and data_src.shape[1] != 1:
-        raise Exception('input field must be a vector')
+    # TODO: there's some weird transposition issue somewhere in the
+    # pipeline---this is just a hack to fix it temporarily
+    if args.fix:
+        m, n = X.shape
+        X = X.reshape(n, m).T
+    
+    num_src_pts = P.shape[0]
+    num_tgt_pts = Q.shape[0]
 
-    if P_src.shape[0] != data_src.size:
+    if num_src_pts == X.shape[0]:
+        X = X.T
+        transposed = True
+    else:
+        transposed = False
+    if num_src_pts != X.shape[1]:
         raise Exception('mismatched sizes')
+    num_layers = X.shape[0]
 
-    print('- upsampling source data to target mesh')
-    kd_src = scipy.spatial.cKDTree(P_src)
-    for i_tgt, p in enumerate(P_tgt):
-        i_src = kd_src.query(p)[1]
-        data_tgt[i_tgt] = data_src[i_src]
+    Y = np.empty((num_layers, num_tgt_pts), dtype=X.dtype)
 
-    print('- smoothing data')
-    kd_tgt = scipy.spatial.cKDTree(P_tgt)
-    for i_tgt, p in enumerate(P_tgt):
-        stencil = kd_tgt.query(p, 5)[1]
-        data_tgt[i_tgt] = np.mean(data_tgt[stencil])
+    P_kdtree = scipy.spatial.cKDTree(P)
 
-    if np.any(np.isnan(data_tgt)):
-        raise Exception('something bad happened: there are NaNs in the output')
+    for i_tgt in range(num_tgt_pts):
+        q = Q[i_tgt, :]
+        _, i_src = P_kdtree.query(q)
+        Y[:, i_tgt] = X[:, i_src]
 
-    print('- writing upsampled data')
-    arma.tofile(data_tgt.reshape(data_tgt.size, 1), args.target_field_path)
+    # TODO: add some kind of interpolation
+
+    if transposed:
+        Y = Y.T
+
+    if args.fix:
+        m, n = Y.shape
+        Y = Y.T.reshape(m, n)
+
+    if args.save_layers:
+        for layer in range(num_layers):
+            arma.tofile(
+                Y[layer, :].reshape(Y.shape[1], 1),
+                args.target_field_path % layer)
+    else:
+        arma.tofile(Y, args.target_field_path)

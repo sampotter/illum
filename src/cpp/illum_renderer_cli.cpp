@@ -51,6 +51,9 @@ int main(int argc, char * argv[])
     ("mode", "Rendering mode", value<std::string>()->default_value("ortho"))
     ("colormap", "Color map to use to render",
      value<std::string>()->default_value("grayscale"))
+    ("transpose",
+     "Transpose data first (use to plot rows instead of columns using -l",
+     value<bool>()->default_value("false"))
     ;
 
   options.parse_positional({"obj_path"});
@@ -105,6 +108,9 @@ int main(int argc, char * argv[])
 
   arma::mat data_matrix;
   data_matrix.load(*data_path);
+  if (args["transpose"].as<bool>()) {
+    data_matrix = data_matrix.t();
+  }
 
   arma::vec data = data_matrix.col(layer);
   if (min_value) {

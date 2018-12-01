@@ -9,6 +9,10 @@ struct thermal_model {
   double t {0};
   arma::vec z, ti, rhoc, Qprev, F;
   arma::mat T;
+  std::vector<double> Tmax, Tmin, Tavg, Tstd;
+  std::vector<double> Tmax_top, Tmin_top, Tavg_top, Tstd_top;
+  std::vector<double> Tmax_bot, Tmin_bot, Tavg_bot, Tstd_bot;
+  bool record_stats {false};
 
   thermal_model(int nfaces,
                 std::vector<double> const & depths,
@@ -78,6 +82,47 @@ struct thermal_model {
     }
     Qprev = Q;
     t += dt;
+
+    if (record_stats) {
+      // Collect stats for the whole thermal model
+      Tmax.push_back(T.max());
+      Tmin.push_back(T.min());
+      Tavg.push_back(arma::mean(arma::vectorise(T)));
+      Tstd.push_back(arma::stddev(arma::vectorise(T)));
+
+      // ... for just the top layer
+      Tmax_top.push_back(T.row(0).max());
+      Tmin_top.push_back(T.row(0).min());
+      Tavg_top.push_back(arma::mean(arma::vectorise(T.row(0))));
+      Tstd_top.push_back(arma::stddev(arma::vectorise(T.row(0))));
+
+      // ... for just the bottom layer
+      Tmax_bot.push_back(T.row(nz).max());
+      Tmin_bot.push_back(T.row(nz).min());
+      Tavg_bot.push_back(arma::mean(arma::vectorise(T.row(nz))));
+      Tstd_bot.push_back(arma::stddev(arma::vectorise(T.row(nz))));
+    }
+  }
+
+  arma::mat get_stats_matrix() const {
+    arma::mat stats(Tmax.size(), 12);
+
+    stats.col(0) = arma::vec(Tmax);
+    stats.col(1) = arma::vec(Tmin);
+    stats.col(2) = arma::vec(Tavg);
+    stats.col(3) = arma::vec(Tstd);
+
+    stats.col(4) = arma::vec(Tmax_top);
+    stats.col(5) = arma::vec(Tmin_top);
+    stats.col(6) = arma::vec(Tavg_top);
+    stats.col(7) = arma::vec(Tstd_top);
+
+    stats.col(8) = arma::vec(Tmax_bot);
+    stats.col(9) = arma::vec(Tmin_bot);
+    stats.col(10) = arma::vec(Tavg_bot);
+    stats.col(11) = arma::vec(Tstd_bot);
+
+    return stats;
   }
 };
 
