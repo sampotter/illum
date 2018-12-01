@@ -5,40 +5,41 @@
 #include "conduction.hpp"
 
 struct thermal_model {
-  int nz;
-  double t;
+  arma::uword nz;
+  double t {0};
   arma::vec z, ti, rhoc, Qprev, F;
   arma::mat T;
 
-  thermal_model(
-    int nfaces,
-    double thermal_inertia = 70.0,
-    var_t<double, std::string> const & init_temp = 233.0)
+  thermal_model(int nfaces,
+                std::vector<double> const & depths,
+                double thermal_inertia,
+                var_t<double, std::vector<double>> const & rhoc,
+                var_t<double, std::string> const & init_temp)
   {
-    z = {
-      0.00197, 0.00434, 0.00718, 0.01060, 0.01469, 0.01960, 0.02549, 0.03257,
-      0.04105, 0.05124, 0.06346, 0.07812, 0.09572, 0.11684, 0.14218, 0.17259,
-      0.20908, 0.25287, 0.30542
-    };
+    nz = depths.size();
 
-    nz = z.n_elem;
+    z = arma::vec(depths);
 
-    t = 0;
-    
     ti.set_size(nz);
     ti.fill(thermal_inertia);
 
-    rhoc = {
-      1.42491e+06, 1.41942e+06, 1.41294e+06, 1.40533e+06, 1.39643e+06,
-      1.38608e+06, 1.37414e+06, 1.36048e+06, 1.34503e+06, 1.32780e+06,
-      1.30894e+06, 1.28872e+06, 1.26762e+06, 1.24631e+06, 1.22562e+06,
-      1.20649e+06, 1.18977e+06, 1.17615e+06, 1.16592e+06
-    };
+    Qprev = arma::vec(nfaces, arma::fill::zeros);
 
-    Qprev.zeros(nfaces);
+    F = arma::vec(nfaces, arma::fill::zeros);
 
-    F.zeros(nfaces);
+    /**
+     * Set volumetric heat capacity from variant
+     */
+    if (auto r = boost::get<double>(&rhoc)) {
+      this->rhoc.set_size(nz);
+      this->rhoc.fill(*r);
+    } else {
+      this->rhoc = arma::vec(*boost::get<std::vector<double>>(&rhoc));
+    }
 
+    /**
+     * Set initial temperature from variant
+     */
     if (double const * T0 = boost::get<double>(&init_temp)) {
       T.set_size(nz + 1, nfaces);
       T.fill(*T0);
