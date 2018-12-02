@@ -19,28 +19,15 @@ struct illum_context {
     var_t<double, std::string> const & albedo,
     double offset = 1e-5);
 
-  void make_horizons(
-    int nphi = 361,
-    double theta_eps = 1e-3,
-    double offset = 1e-5,
-    opt_t<int> j0 = opt_t<int> {},
-    opt_t<int> j1 = opt_t<int> {});
+  void make_horizons(int nphi = 361, double theta_eps = 1e-3,
+                     double offset = 1e-5);
 
-  void save_horizons(
-    boost::filesystem::path const & path,
-    opt_t<int> i0,
-    opt_t<int> i1) const;
+  void save_horizons(boost::filesystem::path const & path) const;
   
-  void load_horizons(
-    boost::filesystem::path const & path,
-    opt_t<int> i0,
-    opt_t<int> i1);
+  void load_horizons(boost::filesystem::path const & path);
   
-  arma::vec get_direct_radiosity(
-    arma::vec const & sun_position,
-    arma::mat const & disk_xy,
-    opt_t<int> j0,
-    opt_t<int> j1);
+  arma::vec get_direct_radiosity(arma::vec const & sun_position,
+                                 arma::mat const & disk_xy);
 
   inline int get_num_faces() const {
     return num_faces;

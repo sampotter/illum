@@ -9,13 +9,6 @@
 #include "thermal.hpp"
 #include "timer.hpp"
 
-#if USE_MPI
-#include <mpi.h>
-int mpi_size, mpi_rank;
-MPI_Comm comm = MPI_COMM_WORLD;
-MPI_Info info = MPI_INFO_NULL;
-#endif
-
 void timed(std::string const & message, std::function<void()> func) {
   std::cout << message << std::flush;
   tic();
@@ -262,25 +255,9 @@ struct job_params {
   }
 };
 
-#if USE_MPI
-void set_i0_and_i1(int num_faces, opt_t<int> & i0, opt_t<int> & i1) {
-  i0 = (static_cast<double>(mpi_rank)/mpi_size)*num_faces;
-  i1 = (static_cast<double>(mpi_rank + 1)/mpi_size)*num_faces;
-}
-#endif
-
 void do_horizons_task(job_params & params, illum_context & context) {
-  opt_t<int> i0, i1;
-#if USE_MPI
-  set_i0_and_i1(context.get_num_faces(), i0, i1);
-#endif
   timed("- building horizon map", [&] () {
-    context.make_horizons(
-      *params.nphi,
-      *params.theta_eps,
-      *params.offset,
-      i0,
-      i1);
+    context.make_horizons(*params.nphi, *params.theta_eps, *params.offset);
   });
   boost::filesystem::path output_path {"horizons"};
   if (params.output_dir) {
@@ -288,18 +265,14 @@ void do_horizons_task(job_params & params, illum_context & context) {
   }
   if (!*params.quiet) {
     timed("- saving horizon map to " + output_path.string(), [&] () {
-      context.save_horizons(output_path, i0, i1);
+      context.save_horizons(output_path);
     });
   }
 }
 
 void do_radiosity_task(job_params & params, illum_context & context) {
   int nfaces = context.get_num_faces();
-  opt_t<int> i0, i1, nhoriz;
-
-#if USE_MPI
-  set_i0_and_i1(nfaces, i0, i1);
-#endif
+  opt_t<int> nhoriz;
 
   /*
    * Load or create a matrix containing the horizons.
@@ -307,17 +280,11 @@ void do_radiosity_task(job_params & params, illum_context & context) {
   if (params.horizon_file) {
     file_exists_or_die(*params.horizon_file);
     timed("- loading horizon map from " + *params.horizon_file, [&] () {
-      // load_mat(*params.horizon_file, horizons, i0, i1);
-      context.load_horizons(*params.horizon_file, i0, i1);
+      context.load_horizons(*params.horizon_file);
     });
   } else {
     timed("- building horizon map", [&] () {
-      context.make_horizons(
-        *params.nphi,
-        *params.theta_eps,
-        *params.offset,
-        i0,
-        i1);
+      context.make_horizons(*params.nphi, *params.theta_eps, *params.offset);
     });
     nhoriz = nfaces;
   }
@@ -411,8 +378,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
     }
 
     timed("- " + frame_str + ": computing direct radiosity", [&] () {
-      rad += context.get_direct_radiosity(
-        sun_positions.col(j), disk_xy, i0, i1);
+      rad += context.get_direct_radiosity(sun_positions.col(j), disk_xy);
       std::cout << " [mean: " << arma::mean(rad) << " W/m^2]";
     });
 
@@ -466,35 +432,34 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
   if (!*params.quiet) {
     timed("- saving radiosity", [&] () {
-      arma_util::save_mat(rad, output_dir_path/"rad", i0, i1);
+      arma_util::save_mat(rad, output_dir_path/"rad");
     });
 
     timed("- saving average radiosity", [&] () {
-      arma_util::save_mat(rad_avg, output_dir_path/"rad_avg", i0, i1);
+      arma_util::save_mat(rad_avg, output_dir_path/"rad_avg");
     });
 
     if (*params.thermal) {
       if (*params.save_full_thermal) {
         timed("- saving full thermal model", [&] () {
           arma_util::save_mat(
-            therm_model->T, output_dir_path/"therm", i0, i1);
+            therm_model->T, output_dir_path/"therm");
         });
       } else {
         timed("- saving thermal", [&] () {
-          arma_util::save_mat(therm, output_dir_path/"therm", i0, i1);
+          arma_util::save_mat(therm, output_dir_path/"therm");
         });
       }
 
       timed("- saving average thermal", [&] () {
-        arma_util::save_mat(therm_avg, output_dir_path/"therm_avg", i0, i1);
+        arma_util::save_mat(therm_avg, output_dir_path/"therm_avg");
       });
 
       timed("- saving max thermal", [&] () {
-        arma_util::save_mat(therm_max, output_dir_path/"therm_max", i0, i1);
+        arma_util::save_mat(therm_max, output_dir_path/"therm_max");
       });
     }
 
-    // TODO: make this MPI aware? ... or not?
     if (*params.record_therm_stats) {
       timed("- saving thermal stats", [&] () {
         auto path = (output_dir_path/"therm_stats.bin").string();
@@ -837,12 +802,6 @@ int main(int argc, char * argv[]) {
     }
   }
 
-#if USE_MPI
-  MPI_Init(&argc, &argv);
-  MPI_Comm_size(comm, &mpi_size);
-  MPI_Comm_rank(comm, &mpi_rank);  
-#endif
-
   if (*params.print_config) {
     params.display();
   }
@@ -857,8 +816,4 @@ int main(int argc, char * argv[]) {
   } else if (*params.task == "radiosity") {
     do_radiosity_task(params, context);
   }
-
-#if USE_MPI
-  MPI_Finalize();
-#endif
 }

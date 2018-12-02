@@ -323,15 +323,10 @@ trace_horizon(
 }
 
 void
-illum_context::make_horizons(
-  int nphi,
-  double theta_eps,
-  double offset,
-  opt_t<int> j0,
-  opt_t<int> j1)
+illum_context::make_horizons(int nphi, double theta_eps, double offset)
 {
   auto phis = arma::linspace(0, 2*arma::datum::pi, nphi);
-  int nhoriz = j1.value_or(num_faces) - j0.value_or(0);
+  int nhoriz = num_faces;
   horizons.set_size(nphi, nhoriz);
 
   if (horizon_obj_path) {
@@ -342,32 +337,24 @@ illum_context::make_horizons(
     BVH horizon_bvh(&horizon_bvh_objects);
     auto const compute_horizon = [&] (int j) {
       auto tri = static_cast<Tri const *>(objects[j]);
-      horizons.col(j - j0.value_or(0)) = 
-        trace_horizon(tri, horizon_bvh, phis, theta_eps, offset);
+      horizons.col(j) = trace_horizon(tri, horizon_bvh, phis, theta_eps, offset);
     };
 #if USE_TBB
-    tbb::parallel_for(
-      size_t(j0.value_or(0)),
-      size_t(j1.value_or(num_faces)),
-      compute_horizon);
+    tbb::parallel_for(size_t(0), size_t(num_faces), compute_horizon);
 #else
-    for (int j = j0.value_or(0); j < j1.value_or(num_faces); ++j) {
+    for (int j = 0; j < num_faces; ++j) {
       compute_horizon(j);
     }
 #endif
   } else {
     auto const compute_horizon = [&] (int j) {
       auto tri = static_cast<Tri const *>(objects[j]);
-      horizons.col(j - j0.value_or(0)) =
-        trace_horizon(tri, bvh, phis, theta_eps, offset);
+      horizons.col(j) = trace_horizon(tri, bvh, phis, theta_eps, offset);
     };
 #if USE_TBB
-    tbb::parallel_for(
-      size_t(j0.value_or(0)),
-      size_t(j1.value_or(num_faces)),
-      compute_horizon);
+    tbb::parallel_for(size_t(0), size_t(num_faces), compute_horizon);
 #else
-    for (int j = j0.value_or(0); j < j1.value_or(num_faces); ++j) {
+    for (int j = 0; j < num_faces; ++j) {
       compute_horizon(j);
     }
 #endif
@@ -375,21 +362,15 @@ illum_context::make_horizons(
 }
 
 void
-illum_context::save_horizons(
-  boost::filesystem::path const & path,
-  opt_t<int> i0,
-  opt_t<int> i1) const
+illum_context::save_horizons(boost::filesystem::path const & path) const
 {
-  arma_util::save_mat(horizons, path, i0, i1);
+  arma_util::save_mat(horizons, path);
 }
 
 void
-illum_context::load_horizons(
-  boost::filesystem::path const & path,
-  opt_t<int> i0,
-  opt_t<int> i1)
+illum_context::load_horizons(boost::filesystem::path const & path)
 {
-  horizons = arma_util::load_mat(path, i0, i1);
+  horizons = arma_util::load_mat(path);
 }
 
 arma::vec::fixed<3> get_centroid(Object const * obj) {
@@ -398,17 +379,14 @@ arma::vec::fixed<3> get_centroid(Object const * obj) {
 }
 
 arma::vec
-illum_context::get_direct_radiosity(
-  arma::vec const & sun_position,
-  arma::mat const & disk_XY,
-  opt_t<int> j0,
-  opt_t<int> j1)
+illum_context::get_direct_radiosity(arma::vec const & sun_position,
+                                    arma::mat const & disk_XY)
 {
   using namespace arma;
 
   static const auto TWO_PI = 2*arma::datum::pi;
 
-  int nhoriz = j1.value_or(horizons.n_cols) - j0.value_or(0);
+  int nhoriz = horizons.n_cols;
   assert(horizons.n_cols == arma::uword(nhoriz));
 
   arma::vec direct;
@@ -419,7 +397,7 @@ illum_context::get_direct_radiosity(
 
   auto const compute_direct_radiosity = [&] (int obj_ind) {
     auto obj = objects[obj_ind];
-    int dir_ind = obj_ind - j0.value_or(0);
+    int dir_ind = obj_ind;
 
     vec::fixed<3> p = get_centroid(obj);
 
@@ -476,12 +454,9 @@ illum_context::get_direct_radiosity(
   };
 
 #if USE_TBB
-  tbb::parallel_for(
-    size_t(j0.value_or(0)),
-    size_t(j1.value_or(horizons.n_cols)),
-    compute_direct_radiosity);
+  tbb::parallel_for(size_t(0), size_t(nhoriz), compute_direct_radiosity);
 #else
-  for (int j = j0.value_or(0); j < j1.value_or(horizons.n_cols); ++j) {
+  for (int j = 0; j < nhoriz; ++j) {
     compute_direct_radiosity(j);
   }
 #endif

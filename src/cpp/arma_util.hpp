@@ -5,16 +5,9 @@
 
 namespace arma_util {
 
-void save_mat(
-  arma::mat const & mat,
-  boost::filesystem::path const & path,
-  opt_t<int> i0,
-  opt_t<int> i1);
+void save_mat(arma::mat const & mat, boost::filesystem::path const & path);
 
-arma::mat load_mat(
-  boost::filesystem::path const & path,
-  opt_t<int> i0,
-  opt_t<int> i1);
+arma::mat load_mat(boost::filesystem::path const & path);
 
 // NB: since Armadillo stores sparse matrices in CSC format, this
 // function takes A.t() instead of A, whic is equivalent to passing A
