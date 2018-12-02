@@ -1,19 +1,5 @@
 #include "arma_util.hpp"
 
-void
-arma_util::save_mat(arma::mat const & mat, boost::filesystem::path const & path)
-{
-  mat.save(path.string() + ".bin");
-}
-
-arma::mat
-arma_util::load_mat(boost::filesystem::path const & path)
-{
-  arma::mat mat;
-  mat.load(path.string());
-  return mat;
-}
-
 arma::vec
 arma_util::forward_solve(arma::sp_mat const & A_t, arma::vec const & b)
 {

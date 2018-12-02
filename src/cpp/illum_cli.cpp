@@ -110,6 +110,10 @@ struct job_params {
       params.output_dir = config["output_dir"].as<std::string>();
     }
 
+    if (config["form_factors_file"]) {
+      params.form_factors_file = config["form_factors_file"].as<std::string>();
+    }
+
     if (config["horizon_file"]) {
       params.horizon_file = config["horizon_file"].as<std::string>();
     }
@@ -158,6 +162,7 @@ struct job_params {
   opt_t<int> gs_steps;
 
   opt_t<std::string> output_dir;
+  opt_t<std::string> form_factors_file;
   opt_t<std::string> horizon_file;
   opt_t<std::string> sun_pos_file;
   opt_t<std::string> horizon_obj_file;
@@ -255,14 +260,34 @@ struct job_params {
   }
 };
 
-void do_horizons_task(job_params & params, illum_context & context) {
+void do_form_factors_task(job_params const & params, illum_context & context)
+{
+  arma::sp_mat F;
+
+  timed("- assembling form factor matrix", [&] () {
+    F = context.compute_F(*params.albedo);
+  });
+
+  boost::filesystem::path output_dir_path = params.output_dir ?
+    *params.output_dir : ".";
+
+  timed("- saving form factor matrix", [&] () {
+    arma_util::save_mat(F, output_dir_path/"form_factors");
+  });
+}
+
+void do_horizons_task(job_params const & params, illum_context & context)
+{
   timed("- building horizon map", [&] () {
     context.make_horizons(*params.nphi, *params.theta_eps, *params.offset);
   });
+
   boost::filesystem::path output_path {"horizons"};
+
   if (params.output_dir) {
     output_path = *params.output_dir/output_path;
   }
+
   if (!*params.quiet) {
     timed("- saving horizon map to " + output_path.string(), [&] () {
       context.save_horizons(output_path);
@@ -270,7 +295,8 @@ void do_horizons_task(job_params & params, illum_context & context) {
   }
 }
 
-void do_radiosity_task(job_params & params, illum_context & context) {
+void do_radiosity_task(job_params const & params, illum_context & context)
+{
   int nfaces = context.get_num_faces();
   opt_t<int> nhoriz;
 
@@ -349,10 +375,17 @@ void do_radiosity_task(job_params & params, illum_context & context) {
   arma::sp_mat F;
 
   if (*params.radiosity) {
-    timed("- assembling form factor matrix", [&] () {
-      F = context.compute_F(*params.albedo);
-      std::cout << " [nnz = " << F.n_nonzero << "]";
-    });
+    if (params.form_factors_file) {
+      timed("- loading form factor matrix", [&] () {
+        F = arma_util::load_mat<arma::sp_mat>(*params.form_factors_file);
+        std::cout << " [nnz = " << F.n_nonzero << "]";
+      });
+    } else {
+      timed("- assembling form factor matrix", [&] () {
+        F = context.compute_F(*params.albedo);
+        std::cout << " [nnz = " << F.n_nonzero << "]";
+      });
+    }
 
     assert(F.n_rows == static_cast<arma::uword>(nfaces));
     assert(F.n_cols == static_cast<arma::uword>(nfaces));
@@ -471,6 +504,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
 int main(int argc, char * argv[]) {
   std::set<std::string> tasks = {
+    "form_factors",
     "horizons",
     "radiosity"
   };
@@ -582,6 +616,11 @@ int main(int argc, char * argv[]) {
       cxxopts::value<std::string>()
     )
     (
+      "form_factors_file",
+      "File containing form factor matrix",
+      cxxopts::value<std::string>()
+    )
+    (
       "horizon_file",
       "Horizon file",
       cxxopts::value<std::string>()
@@ -657,13 +696,12 @@ int main(int argc, char * argv[]) {
     std::exit(EXIT_FAILURE);
   };
 
-  if (!params.path || !args.count("task")) {
-    params.task = "radiosity";
-  } else {
+  if (!params.task || args.count("task")) {
     params.task = args["task"].as<std::string>();
-    if (tasks.find(*params.task) == tasks.end()) {
-      show_help_and_die();
-    }
+  }
+
+  if (tasks.find(*params.task) == tasks.end()) {
+    show_help_and_die();
   }
 
   if (!params.path) {
@@ -741,6 +779,10 @@ int main(int argc, char * argv[]) {
     params.output_dir = args["output_dir"].as<std::string>();
   }
 
+  if (!params.form_factors_file && args.count("form_factors_file")) {
+    params.form_factors_file = args["form_factors_file"].as<std::string>();
+  }
+
   if (!params.horizon_file && args.count("horizon_file")) {
     params.horizon_file = args["horizon_file"].as<std::string>();
   }
@@ -811,7 +853,9 @@ int main(int argc, char * argv[]) {
     context.set_horizon_obj_file(*params.horizon_obj_file);
   }
 
-  if (*params.task == "horizons") {
+  if (*params.task == "form_factors") {
+    do_form_factors_task(params, context);
+  } else if (*params.task == "horizons") {
     do_horizons_task(params, context);
   } else if (*params.task == "radiosity") {
     do_radiosity_task(params, context);

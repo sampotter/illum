@@ -370,7 +370,7 @@ illum_context::save_horizons(boost::filesystem::path const & path) const
 void
 illum_context::load_horizons(boost::filesystem::path const & path)
 {
-  horizons = arma_util::load_mat(path);
+  horizons = arma_util::load_mat<arma::mat>(path);
 }
 
 arma::vec::fixed<3> get_centroid(Object const * obj) {
