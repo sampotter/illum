@@ -353,7 +353,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
   arma::vec therm, therm_avg, therm_max;
 
-  if (*params.thermal) {
+  if (params.thermal && *params.thermal) {
     therm.resize(nfaces);
 
     therm_avg.resize(nfaces);
@@ -363,16 +363,20 @@ void do_radiosity_task(job_params & params, illum_context & context) {
     therm_max.zeros();
   }
 
-  // TODO: only construct this if we actually need to use it
-  thermal_model therm_model {
-    nfaces,
-    *params.depths,
-    *params.thermal_inertia,
-    *params.rhoc,
-    *params.T0
-  };
+  opt_t<thermal_model> therm_model;
+
+  if (params.thermal && *params.thermal) {
+    therm_model = thermal_model {
+      nfaces,
+      *params.depths,
+      *params.thermal_inertia,
+      *params.rhoc,
+      *params.T0
+    };
+  }
+
   if (*params.record_therm_stats) {
-    therm_model.record_stats = true;
+    therm_model->record_stats = true;
   }
 
   arma::sp_mat F;
@@ -403,7 +407,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
      * Incorporate heat flux at surface into radiosity.
      */
     if (*params.thermal) {
-      rad += therm_model.get_radiosity();
+      rad += therm_model->get_radiosity();
     }
 
     timed("- " + frame_str + ": computing direct radiosity", [&] () {
@@ -433,8 +437,8 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
     if (*params.thermal) {
       timed("- " + frame_str + ": stepping thermal model", [&] () {
-        therm_model.step(*params.dt, rad);
-        therm = therm_model.T.row(0).t();
+        therm_model->step(*params.dt, rad);
+        therm = therm_model->T.row(0).t();
         therm_avg += (therm - therm_avg)/(current_frame + 1);
 
         // TODO: add max_lag flag to set 50 to something else
@@ -473,7 +477,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
       if (*params.save_full_thermal) {
         timed("- saving full thermal model", [&] () {
           arma_util::save_mat(
-            therm_model.T, output_dir_path/"therm", i0, i1);
+            therm_model->T, output_dir_path/"therm", i0, i1);
         });
       } else {
         timed("- saving thermal", [&] () {
@@ -494,7 +498,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
     if (*params.record_therm_stats) {
       timed("- saving thermal stats", [&] () {
         auto path = (output_dir_path/"therm_stats.bin").string();
-        therm_model.get_stats_matrix().save(path);
+        therm_model->get_stats_matrix().save(path);
       });
     }
   }
@@ -737,7 +741,7 @@ int main(int argc, char * argv[]) {
     params.quiet = args["quiet"].as<bool>();
   }
 
-  if (!params.depths || args.count("depths")) {
+  if (!params.depths && args.count("depths")) {
     params.depths = args["depths"].as<std::vector<double>>();
   }
 
@@ -753,7 +757,7 @@ int main(int argc, char * argv[]) {
     params.thermal_inertia = args["ti"].as<double>();
   }
 
-  if (!params.rhoc || args.count("rhoc")) {
+  if (!params.rhoc && args.count("rhoc")) {
     auto rhoc = args["rhoc"].as<std::vector<double>>();
     if (rhoc.size() == 1) {
       params.rhoc = rhoc[0];
