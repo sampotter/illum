@@ -17,7 +17,6 @@ endif ()
 find_package (Boost 1.60 REQUIRED COMPONENTS system filesystem)
 
 if (BUILD_RENDERER)
-  find_library (pngpp_LIBRARY png++)
   find_package (PNG REQUIRED)
 endif ()
 

@@ -1,7 +1,8 @@
 #include <armadillo>
 #include <cxxopts.hpp>
 #include <fastbvh>
-#include <png++/png.hpp>
+
+#include "png++/png.hpp"
 
 #include <algorithm>
 #include <stdexcept>

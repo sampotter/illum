@@ -16,3 +16,6 @@
 [submodule "src/cpp/yaml-cpp"]
 	path = src/cpp/yaml-cpp
 	url = https://github.com/jbeder/yaml-cpp.git
+[submodule "src/cpp/png++"]
+	path = src/cpp/png++
+	url = https://github.com/sampotter/pngpp

@@ -41,8 +41,32 @@ struct job_params {
 
     YAML::Node config = YAML::LoadFile(path_str.c_str());
 
+    if (config["task"]) {
+      params.task = config["task"].as<std::string>();
+    }
+
+    if (config["path"]) {
+      params.path = config["path"].as<std::string>();
+    }
+
+    if (config["offset"]) {
+      params.offset = config["offset"].as<double>();
+    }
+
+    if (config["theta_eps"]) {
+      params.theta_eps = config["theta_eps"].as<double>();
+    }
+
+    if (config["nphi"]) {
+      params.nphi = config["nphi"].as<double>();
+    }
+
     if (config["radiosity"]) {
       params.do_radiosity = config["radiosity"].as<bool>();
+    }
+
+    if (config["gs_steps"]) {
+      params.gs_steps = config["gs_steps"].as<int>();
     }
 
     if (config["print_residual"]) {
@@ -50,15 +74,27 @@ struct job_params {
     }
 
     if (config["thermal"]) {
-      params.do_thermal = config["thermal"].as<bool>();
+      params.thermal = config["thermal"].as<bool>();
     }
 
     if (config["quiet"]) {
       params.quiet = config["quiet"].as<bool>();
     }
 
+    if (config["dt"]) {
+      params.dt = config["dt"].as<double>();
+    }
+
+    if (config["albedo"]) {
+      params.albedo = config["albedo"].as<double>();
+    }
+
     if (config["depths"]) {
       params.depths = config["depths"].as<std::vector<double>>();
+    }
+
+    if (config["ti"]) {
+      params.thermal_inertia = config["ti"].as<double>();
     }
 
     if (config["rhoc"]) {
@@ -69,8 +105,59 @@ struct job_params {
       }
     }
 
+    if (config["T0"]) {
+      try {
+        params.T0 = config["T0"].as<double>();
+      } catch (...) {
+        params.T0 = config["T0"].as<std::string>();
+      }
+    }
+
+    if (config["output_dir"]) {
+      params.output_dir = config["output_dir"].as<std::string>();
+    }
+
+    if (config["horizon_file"]) {
+      params.horizon_file = config["horizon_file"].as<std::string>();
+    }
+
+    if (config["horizon_obj_file"]) {
+      params.horizon_obj_file = config["horizon_obj_file"].as<std::string>();
+    }
+
+    if (config["sun_pos_file"]) {
+      params.sun_pos_file = config["sun_pos_file"].as<std::string>();
+    }
+
+    if (config["sun_unit"]) {
+      params.sun_unit = config["sun_unit"].as<std::string>();
+    }
+
+    if (config["mesh_unit"]) {
+      params.mesh_unit = config["mesh_unit"].as<std::string>();
+    }
+    
+    if (config["save_full_thermal"]) {
+      params.save_full_thermal = config["save_full_thermal"].as<bool>();
+    }
+
+    if (config["record_therm_stats"]) {
+      params.record_therm_stats = config["record_therm_stats"].as<bool>();
+    }
+
+    if (config["repeat"]) {
+      params.repeat = config["repeat"].as<int>();
+    }
+
+    if (config["print_config"]) {
+      params.print_config = config["print_config"].as<bool>();
+    }
+
     return params;
   }
+
+  opt_t<std::string> task;
+  opt_t<std::string> path;
 
   opt_t<double> offset;
   opt_t<double> theta_eps;
@@ -85,10 +172,13 @@ struct job_params {
 
   opt_t<bool> do_radiosity;
   opt_t<bool> print_residual;
-  opt_t<bool> do_thermal;
+  opt_t<bool> thermal;
   opt_t<bool> quiet;
   opt_t<bool> save_full_thermal;
   opt_t<bool> record_therm_stats;
+  opt_t<bool> print_config;
+
+  opt_t<int> repeat;
 
   opt_t<std::vector<double>> depths;
   opt_t<double> dt;
@@ -96,7 +186,7 @@ struct job_params {
   opt_t<var_t<double, std::vector<double>>> rhoc;
 
   opt_t<var_t<double, std::string>> albedo;
-  opt_t<var_t<double, std::string>> initial_temperature;
+  opt_t<var_t<double, std::string>> T0;
 
   // TODO: should we use boost units for this eventually?
   opt_t<std::string> sun_unit;
@@ -132,10 +222,14 @@ struct job_params {
          << endl
          << "radiosity: " << *do_radiosity << endl
          << "print_residual: " << *print_residual << endl
-         << "do_thermal: " << *do_thermal << endl
+         << "thermal: " << *thermal << endl
          << "quiet: " << *quiet << endl
          << "save_full_thermal: " << *save_full_thermal << endl
          << "record_therm_stats: " << *record_therm_stats << endl
+         << (repeat ?
+             ("repeat: " + std::to_string(*repeat)).c_str() :
+             "repeat: no")
+         << endl
          << "depths: ";
     if (depths) {
       for (decltype(depths->size()) i = 0; i < depths->size() - 1; ++i)
@@ -162,7 +256,7 @@ struct job_params {
     }
     cout << endl
          << "albedo: " << *albedo << endl
-         << "T0: " << *initial_temperature << endl
+         << "T0: " << *T0 << endl
          << "sun_unit: " << *sun_unit << endl
          << "mesh_unit: " << *mesh_unit << endl;
   }
@@ -259,7 +353,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
   arma::vec therm, therm_avg, therm_max;
 
-  if (*params.do_thermal) {
+  if (*params.thermal) {
     therm.resize(nfaces);
 
     therm_avg.resize(nfaces);
@@ -275,7 +369,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
     *params.depths,
     *params.thermal_inertia,
     *params.rhoc,
-    *params.initial_temperature
+    *params.T0
   };
   if (*params.record_therm_stats) {
     therm_model.record_stats = true;
@@ -293,17 +387,22 @@ void do_radiosity_task(job_params & params, illum_context & context) {
     assert(F.n_cols == static_cast<arma::uword>(nfaces));
   }
 
-  for (int j = 0; j < nsunpos; ++j) {
-    std::string const frame_str {
-      std::to_string(j + 1) + "/" + std::to_string(nsunpos)
-    };
+  int current_frame = 0;
+
+  auto const step = [&] (int j, int rep = 0) {
+    std::string frame_str =
+      std::to_string(j + 1) + "/" + std::to_string(nsunpos);
+    if (rep > 0) {
+      frame_str += " [" + std::to_string(rep) + "/" +
+        std::to_string(*params.repeat) + "]";
+    }
 
     rad.zeros();
 
     /**
      * Incorporate heat flux at surface into radiosity.
      */
-    if (*params.do_thermal) {
+    if (*params.thermal) {
       rad += therm_model.get_radiosity();
     }
 
@@ -330,17 +429,31 @@ void do_radiosity_task(job_params & params, illum_context & context) {
       };
     }
 
-    rad_avg += (rad - rad_avg)/(j + 1);
+    rad_avg += (rad - rad_avg)/(current_frame + 1);
 
-    if (*params.do_thermal) {
+    if (*params.thermal) {
       timed("- " + frame_str + ": stepping thermal model", [&] () {
         therm_model.step(*params.dt, rad);
         therm = therm_model.T.row(0).t();
-        therm_avg += (therm - therm_avg)/(j + 1);
-        if (j > 50) {
+        therm_avg += (therm - therm_avg)/(current_frame + 1);
+
+        // TODO: add max_lag flag to set 50 to something else
+        if (current_frame > 50) {
           therm_max = arma::max(therm_max, therm);
         }
       });
+    }
+  };
+
+  if (params.repeat) {
+    for (int rep = 1; rep <= *params.repeat; ++rep) {
+      for (int j = 0; j < nsunpos; ++j) {
+        step(j, rep);
+      }
+    }
+  } else {
+    for (int j = 0; j < nsunpos; ++j) {
+      step(j);
     }
   }
 
@@ -356,7 +469,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
       arma_util::save_mat(rad_avg, output_dir_path/"rad_avg", i0, i1);
     });
 
-    if (*params.do_thermal) {
+    if (*params.thermal) {
       if (*params.save_full_thermal) {
         timed("- saving full thermal model", [&] () {
           arma_util::save_mat(
@@ -405,81 +518,152 @@ int main(int argc, char * argv[]) {
     ("Available tasks:\n\n" + tasks_to_string()).c_str());
 
   options.add_options()
-    ("h,help", "Display usage")
-    ("task", "Task to do", cxxopts::value<std::string>())
-    ("c,config", "Path to YAML configuration file",
-     cxxopts::value<std::string>())
-    ("p,path", "Path to input OBJ file",
-     cxxopts::value<std::string>()->default_value("./vesta_xtiny.obj"))
-    ("o,offset",
-     "Offset when calculating visibility from a triangle",
-     cxxopts::value<double>()->default_value("1e-5"))
-    ("e,eps",
-     "Tolerance for theta in calculating horizons",
-     cxxopts::value<double>()->default_value("1e-3"))
-    ("n,nphi",
-     "Number of phi values (linearly spaced in [0, 2pi])",
-     cxxopts::value<int>()->default_value("361"))
-    ("r,radiosity",
-     "Compute scattered radiosity in addition to direct radiosity",
-     cxxopts::value<bool>()->default_value("false"))
-    ("gs_steps", "Number of Gauss-Seidel steps used to compute scattered "
-     "radiosity", cxxopts::value<int>()->default_value("1"))
-    ("print_residual", "Print the residual at each step when computing the "
-     "scattered radiosity", cxxopts::value<bool>()->default_value("false"))
-    ("t,thermal", "Drive a thermal model",
-     cxxopts::value<bool>()->default_value("false"))
-    ("q,quiet", "Don't save output", 
-     cxxopts::value<bool>()->default_value("false"))
-    ("dt", "Time step for thermal model [s]",
-     cxxopts::value<double>()->default_value("600"))
-    ("a,albedo", "Albedo for model",
-     cxxopts::value<std::string>()->default_value("0.12"))
-    ("depths", "Depths for layers in thermal models [m]",
-     cxxopts::value<std::vector<double>>())
-    ("ti", "Thermal inertia [J m^-2 K^-1 s^-1/2]",
-     cxxopts::value<double>()->default_value("70.0"))
-    ("rhoc", "Heat capacity per volume [J m^-3]",
-     cxxopts::value<std::vector<double>>())
-    ("T0", "Initial temperature",
-     cxxopts::value<std::string>()->default_value("233.0"))
-    ("output_dir", "Output file", cxxopts::value<std::string>())
-    ("horizon_file", "Horizon file", cxxopts::value<std::string>())
-    ("horizon_obj_file", "Path of OBJ file to use to compute horizon maps",
-     cxxopts::value<std::string>())
-    ("sun_pos_file", "File containing sun positions",
-     cxxopts::value<std::string>())
-    ("sun_unit", "Units used for sun positions",
-     cxxopts::value<std::string>()->default_value("m"))
-    ("mesh_unit", "Units used by OBJ file vertices",
-     cxxopts::value<std::string>()->default_value("km"))
-    ("save_full_thermal",
-     "Save all layers of the thermal model as opposed to only the top layer",
-     cxxopts::value<bool>()->default_value("false"))
-    ("record_therm_stats", "Collect thermal statistics",
-     cxxopts::value<bool>()->default_value("false"))
-    ("print_config", "Print configuration before running",
-     cxxopts::value<bool>()->default_value("false"))
+    (
+      "h,help",
+      "Display usage"
+    )
+    (
+      "task",
+      "Task to do",
+      cxxopts::value<std::string>()->default_value("radiosity")
+    )
+    (
+      "config",
+      "Path to YAML configuration file",
+      cxxopts::value<std::string>()
+    )
+    (
+      "path",
+      "Path to input OBJ file",
+      cxxopts::value<std::string>()
+    )
+    (
+      "offset",
+      "Offset when calculating visibility from a triangle",
+      cxxopts::value<double>()->default_value("1e-5")
+    )
+    (
+      "theta_eps",
+      "Tolerance for theta in calculating horizons",
+      cxxopts::value<double>()->default_value("1e-3")
+    )
+    (
+      "nphi",
+      "Number of phi values (linearly spaced in [0, 2pi])",
+      cxxopts::value<int>()->default_value("361")
+    )
+    (
+      "radiosity",
+      "Compute scattered radiosity in addition to direct radiosity",
+      cxxopts::value<bool>()->default_value("false")
+    )
+    (
+      "gs_steps",
+      "Number of Gauss-Seidel steps used to compute scattered radiosity",
+      cxxopts::value<int>()->default_value("1")
+    )
+    (
+      "print_residual",
+      "Print the residual at each step when computing the scattered radiosity",
+      cxxopts::value<bool>()->default_value("false")
+    )
+    (
+      "thermal",
+      "Drive a thermal model",
+      cxxopts::value<bool>()->default_value("false")
+    )
+    (
+      "quiet",
+      "Don't save output",
+      cxxopts::value<bool>()->default_value("false")
+    )
+    (
+      "dt",
+      "Time step for thermal model [s]",
+      cxxopts::value<double>()->default_value("600")
+    )
+    (
+      "albedo",
+      "Albedo for model",
+      cxxopts::value<std::string>()->default_value("0.12")
+    )
+    (
+      "depths",
+      "Depths for layers in thermal models [m]",
+      cxxopts::value<std::vector<double>>()
+    )
+    (
+      "ti",
+      "Thermal inertia [J m^-2 K^-1 s^-1/2]",
+      cxxopts::value<double>()->default_value("70.0")
+    )
+    (
+      "rhoc",
+      "Heat capacity per volume [J m^-3]",
+      cxxopts::value<std::vector<double>>()
+    )
+    (
+      "T0",
+      "Initial temperature",
+      cxxopts::value<std::string>()->default_value("233.0")
+    )
+    (
+      "output_dir",
+      "Output file",
+      cxxopts::value<std::string>()
+    )
+    (
+      "horizon_file",
+      "Horizon file",
+      cxxopts::value<std::string>()
+    )
+    (
+      "horizon_obj_file",
+      "Path of OBJ file to use to compute horizon maps",
+      cxxopts::value<std::string>()
+    )
+    (
+      "sun_pos_file",
+      "File containing sun positions",
+      cxxopts::value<std::string>()
+    )
+    (
+      "sun_unit",
+      "Units used for sun positions",
+      cxxopts::value<std::string>()->default_value("m")
+    )
+    (
+      "mesh_unit",
+      "Units used by OBJ file vertices",
+      cxxopts::value<std::string>()->default_value("km")
+    )
+    (
+      "save_full_thermal",
+      "Save all layers of the thermal model as opposed to only the top layer",
+      cxxopts::value<bool>()->default_value("false")
+    )
+    (
+      "record_therm_stats",
+      "Collect thermal statistics",
+      cxxopts::value<bool>()->default_value("false")
+    )
+    (
+      "repeat",
+      "Number of times to repeat the sun positions",
+      cxxopts::value<int>()
+    )
+    (
+      "print_config",
+      "Print configuration before running",
+      cxxopts::value<bool>()->default_value("false")
+    )
     ;
-
-  if (argc == 1) {
-    std::cout << options.help() << std::endl;
-    std::exit(EXIT_SUCCESS);
-  }
-
-  options.parse_positional({"task"});
 
   auto args = options.parse(argc, argv);
   if (args["help"].as<bool>()) {
     std::cout << options.help() << std::endl;
     std::exit(EXIT_SUCCESS);
   }
-
-  /**
-   * Parse options related to loading the model from the OBJ file.
-   */
-  auto task = args["task"].as<std::string>();
-  auto path = args["path"].as<std::string>();
 
   job_params params;
 
@@ -499,53 +683,77 @@ int main(int argc, char * argv[]) {
    * Parse options which are job parameters.
    */
 
-  if (!params.offset) {
+  auto const show_help_and_die = [&] () {
+    std::cout << options.help() << std::endl;
+    std::exit(EXIT_FAILURE);
+  };
+
+  if (!params.path || !args.count("task")) {
+    params.task = "radiosity";
+  } else {
+    params.task = args["task"].as<std::string>();
+    if (tasks.find(*params.task) == tasks.end()) {
+      show_help_and_die();
+    }
+  }
+
+  if (!params.path) {
+    if (!args.count("path")) {
+      show_help_and_die();
+    } else {
+      params.path = args["path"].as<std::string>();
+    }
+  }
+
+  if (!params.offset || args.count("offset")) {
     params.offset = args["offset"].as<double>();
   }
 
-  if (!params.theta_eps) {
-    params.theta_eps = args["eps"].as<double>();
+  if (!params.theta_eps || args.count("theta_eps")) {
+    params.theta_eps = args["theta_eps"].as<double>();
   }
 
-  if (!params.nphi) {
+  if (!params.nphi || args.count("nphi")) {
     params.nphi = args["nphi"].as<int>();
   }
 
-  if (!params.do_radiosity) {
+  if (!params.do_radiosity || args.count("do_radiosity")) {
     params.do_radiosity = args["radiosity"].as<bool>();
   }
 
-  if (!params.gs_steps) {
+  if (!params.gs_steps || args.count("gs_steps")) {
     params.gs_steps = args["gs_steps"].as<int>();
   }
 
-  if (!params.print_residual) {
+  if (!params.print_residual || args.count("print_residual")) {
     params.print_residual = args["print_residual"].as<bool>();
   }
 
-  if (!params.do_thermal) {
-    params.do_thermal = args["thermal"].as<bool>();
+  if (!params.thermal || args.count("thermal")) {
+    params.thermal = args["thermal"].as<bool>();
   }
 
-  if (!params.quiet) {
+  if (!params.quiet || args.count("quiet")) {
     params.quiet = args["quiet"].as<bool>();
   }
 
-  if (!params.depths && args.count("depths") != 0) {
+  if (!params.depths || args.count("depths")) {
     params.depths = args["depths"].as<std::vector<double>>();
   }
 
-  if (!params.dt) {
+  if (!params.dt || args.count("dt")) {
     params.dt = args["dt"].as<double>();
   }
 
-  params.set_albedo(args["albedo"].as<std::string>());
+  if (!params.albedo || args.count("albedo")) {
+    params.set_albedo(args["albedo"].as<std::string>());
+  }
 
-  if (!params.thermal_inertia) {
+  if (!params.thermal_inertia || args.count("thermal_inertia")) {
     params.thermal_inertia = args["ti"].as<double>();
   }
 
-  if (!params.rhoc && args.count("rhoc") != 0) {
+  if (!params.rhoc || args.count("rhoc")) {
     auto rhoc = args["rhoc"].as<std::vector<double>>();
     if (rhoc.size() == 1) {
       params.rhoc = rhoc[0];
@@ -554,44 +762,50 @@ int main(int argc, char * argv[]) {
     }
   }
 
-  if (!params.initial_temperature) {
-    try {
-      params.initial_temperature = std::stod(args["T0"].as<std::string>());
-    } catch (...) {
-      params.initial_temperature = args["T0"].as<std::string>();
-    }
+  try {
+    params.T0 = std::stod(args["T0"].as<std::string>());
+  } catch (...) {
+    params.T0 = args["T0"].as<std::string>();
   }
 
-  if (!params.output_dir && args.count("output_dir") != 0) {
+  if (!params.output_dir && args.count("output_dir")) {
     params.output_dir = args["output_dir"].as<std::string>();
   }
 
-  if (!params.horizon_file && args.count("horizon_file") != 0) {
+  if (!params.horizon_file && args.count("horizon_file")) {
     params.horizon_file = args["horizon_file"].as<std::string>();
   }
 
-  if (!params.horizon_obj_file && args.count("horizon_obj_file") != 0) {
+  if (!params.horizon_obj_file && args.count("horizon_obj_file")) {
     params.horizon_obj_file = args["horizon_obj_file"].as<std::string>();
   }
 
-  if (!params.sun_pos_file && args.count("sun_pos_file") != 0) {
+  if (!params.sun_pos_file && args.count("sun_pos_file")) {
     params.sun_pos_file = args["sun_pos_file"].as<std::string>();
   }
 
-  if (!params.sun_unit) {
+  if (!params.sun_unit || args.count("sun_unit")) {
     params.sun_unit = args["sun_unit"].as<std::string>();
   }
 
-  if (!params.mesh_unit) {
+  if (!params.mesh_unit || args.count("mesh_unit")) {
     params.mesh_unit = args["mesh_unit"].as<std::string>();
   }
 
-  if (!params.save_full_thermal) {
+  if (!params.save_full_thermal || args.count("save_full_thermal")) {
     params.save_full_thermal = args["save_full_thermal"].as<bool>();
   }
 
-  if (!params.record_therm_stats) {
+  if (!params.record_therm_stats || args.count("record_therm_stats")) {
     params.record_therm_stats = args["record_therm_stats"].as<bool>();
+  }
+
+  if (!params.print_config || args.count("print_config")) {
+    params.print_config = args["print_config"].as<bool>();
+  }
+  
+  if (!params.repeat && args.count("repeat")) {
+    params.repeat = args["repeat"].as<int>();
   }
 
   assert(*params.sun_unit == "m" || *params.sun_unit == "km");
@@ -605,7 +819,7 @@ int main(int argc, char * argv[]) {
   /**
    * Error and consistency checking
    */
-  if (params.do_thermal && *params.do_thermal) {
+  if (params.thermal && *params.thermal) {
     if (!params.depths) {
       std::cerr << "When running a thermal model provide layer levels using "
                 << "the --depths flag" << std::endl;
@@ -619,31 +833,26 @@ int main(int argc, char * argv[]) {
     }
   }
 
-  /**
-   * Check that the task that the user request is valid.
-   */
-  if (tasks.find(task) == tasks.end()) {
-    std::cout << options.help() << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-
 #if USE_MPI
   MPI_Init(&argc, &argv);
   MPI_Comm_size(comm, &mpi_size);
   MPI_Comm_rank(comm, &mpi_rank);  
 #endif
 
-  if (args["print_config"].as<bool>()) {
+  if (*params.print_config) {
     params.display();
   }
   
-  illum_context context {path};
+  illum_context context {*params.path};
   if (params.horizon_obj_file) {
     context.set_horizon_obj_file(*params.horizon_obj_file);
   }
 
-  if (task == "horizons") do_horizons_task(params, context);
-  else if (task == "radiosity") do_radiosity_task(params, context);
+  if (*params.task == "horizons") {
+    do_horizons_task(params, context);
+  } else if (*params.task == "radiosity") {
+    do_radiosity_task(params, context);
+  }
 
 #if USE_MPI
   MPI_Finalize();
