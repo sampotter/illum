@@ -122,8 +122,9 @@ int main(int argc, char * argv[])
     )
     ;
 
+  bool should_display_help = argc == 1;
   auto args = options.parse(argc, argv);
-  if (argc == 1 || args["help"].as<bool>()) {
+  if (should_display_help || args["help"].as<bool>()) {
     std::cout << options.help() << std::endl;
     std::exit(EXIT_SUCCESS);
   }
