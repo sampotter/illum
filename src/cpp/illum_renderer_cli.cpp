@@ -92,12 +92,12 @@ int main(int argc, char * argv[])
     )
     (
       "az",
-      "Camera azimuth [deg]",
+      "Camera azimuth [degrees]",
       value<double>()->default_value("0")
     )
     (
       "el",
-      "camera elevation [deg]",
+      "camera elevation [degrees]",
       value<double>()->default_value("0")
     )
     (
@@ -161,6 +161,10 @@ int main(int argc, char * argv[])
     if (mode == mode_e::ORTHOGRAPHIC) {
       std::cerr << "can't set radius in orthographic mode" << std::endl;
       std::exit(EXIT_FAILURE);
+    } else if (mode == mode_e::EQUAL_AREA_CYLINDRICAL) {
+      std::cerr << "can't set radius for equal area cylindrical projection"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
     } else {
       rad = args["rad"].as<double>();
     }
@@ -202,48 +206,37 @@ int main(int argc, char * argv[])
     r_model = fmax(r_model, r);
   }
 
-  if (mode == mode_e::ORTHOGRAPHIC) {
-    rad = 1.1*r_model;
-  }
-
   BVH bvh {&objects};
 
-  az *= PI/180;
-  el *= PI/180;
-
-  if (rad == 0) {
-    std::cerr << "rad is uninitialized somehow" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
-
-  Vector3 p_cam {
-    static_cast<float>(rad*std::cos(az)*std::sin(el)),
-    static_cast<float>(rad*std::sin(az)*std::sin(el)),
-    static_cast<float>(rad*std::cos(el))
+  struct elt {
+    elt(int i, int j, double value): i {i}, j {j}, value {value} {}
+    int i, j;
+    double value;
   };
 
-  Vector3 n_eye = -normalize(p_cam);
+  std::vector<elt> elts;
 
-  p_cam = p_cam + c_model;
-  
-  double el_up = el - 90;
-  Vector3 n_up {
-    static_cast<float>(std::cos(az)*std::sin(el_up)),
-    static_cast<float>(std::sin(az)*std::sin(el_up)),
-    static_cast<float>(std::cos(el_up))
+  auto sph2xyz = [] (double phi, double theta, double rad = 1) -> Vector3 {
+    return {
+      static_cast<float>(rad*std::cos(phi)*std::sin(theta)),
+      static_cast<float>(rad*std::sin(phi)*std::sin(theta)),
+      static_cast<float>(rad*std::cos(theta))
+    };
   };
-
-  Vector3 n_right = n_eye^n_up;
 
   if (mode == mode_e::ORTHOGRAPHIC) {
-    struct elt {
-      elt(int i, int j, double value): i {i}, j {j}, value {value} {}
-      int i, j;
-      double value;
-    };
+    rad = 1.1*r_model;
 
-    std::vector<elt> elts;
+    az *= PI/180;
+    el *= PI/180;
 
+    Vector3 p_cam = sph2xyz(az, el, rad);
+    Vector3 n_eye = -normalize(p_cam);
+    Vector3 n_up = sph2xyz(az, el - PI/2);
+    Vector3 n_right = n_eye^n_up;
+
+    p_cam = p_cam + c_model;
+  
     double aspect = static_cast<double>(width)/height;
 
     IntersectionInfo info;
@@ -262,42 +255,62 @@ int main(int argc, char * argv[])
         }
       }
     }
-
-    double lo = minval ? *minval : data.min();
-    double hi = maxval ? *maxval : data.max();
-
-    for (auto & elt: elts) {
-      elt.value -= lo;
-      elt.value /= hi - lo;
-    }
-    
-    auto jet = [] (double x) -> png::rgb_pixel {
-      double r = std::clamp(x < 0.7 ? 4*x - 1.5 : -4*x + 4.5, 0., 1.);
-      double g = std::clamp(x < 0.5 ? 4*x - 0.5 : -4*x + 3.5, 0., 1.);
-      double b = std::clamp(x < 0.3 ? 4*x + 0.5 : -4*x + 2.5, 0., 1.);
-      return {
-        static_cast<uint8_t>(std::floor(255*r)),
-        static_cast<uint8_t>(std::floor(255*g)),
-        static_cast<uint8_t>(std::floor(255*b))
-      };
-    };
-
-    auto bw = [] (double x) -> png::rgb_pixel {
-      auto byte = static_cast<uint8_t>(255*std::clamp(x, 0., 1.));
-      return {byte, byte, byte};
-    };
-
-    auto cmap = cmap_str == "grayscale" ? bw : jet;
-
-    png::image<png::rgb_pixel> img {
-      static_cast<png::uint_32>(width),
-      static_cast<png::uint_32>(height)
-    };
-    
-    for (auto & elt: elts) {
-      img.set_pixel(elt.j, elt.i, cmap(elt.value));
-    }
-
-    img.write(img_str);
   }
+  else if (mode == mode_e::EQUAL_AREA_CYLINDRICAL) {
+    rad = 1.1*r_model;
+    double theta, phi;
+    int index;
+    Vector3 p_cam, n_eye;
+    IntersectionInfo info;
+    for (int i = 0; i < height; ++i) {
+      theta = asin(2*static_cast<double>(i + 1)/(height + 1) - 1);
+      for (int j = 0; j < width; ++j) {
+        phi = 2*PI*static_cast<double>(j)/width;
+        p_cam = sph2xyz(phi - az, theta - el, rad);
+        n_eye = -normalize(p_cam);
+        p_cam = p_cam + c_model;
+        if (bvh.getIntersection({p_cam, n_eye}, &info, false)) {
+          index = static_cast<Tri const *>(info.object)->index;
+          elts.emplace_back(i, j, data(index));
+        }
+      }
+    }
+  }
+
+  double lo = minval ? *minval : data.min();
+  double hi = maxval ? *maxval : data.max();
+
+  for (auto & elt: elts) {
+    elt.value -= lo;
+    elt.value /= hi - lo;
+  }
+    
+  auto jet = [] (double x) -> png::rgb_pixel {
+               double r = std::clamp(x < 0.7 ? 4*x - 1.5 : -4*x + 4.5, 0., 1.);
+               double g = std::clamp(x < 0.5 ? 4*x - 0.5 : -4*x + 3.5, 0., 1.);
+               double b = std::clamp(x < 0.3 ? 4*x + 0.5 : -4*x + 2.5, 0., 1.);
+               return {
+                 static_cast<uint8_t>(std::floor(255*r)),
+                 static_cast<uint8_t>(std::floor(255*g)),
+                 static_cast<uint8_t>(std::floor(255*b))
+               };
+             };
+
+  auto bw = [] (double x) -> png::rgb_pixel {
+              auto byte = static_cast<uint8_t>(255*std::clamp(x, 0., 1.));
+              return {byte, byte, byte};
+            };
+
+  auto cmap = cmap_str == "grayscale" ? bw : jet;
+
+  png::image<png::rgb_pixel> img {
+    static_cast<png::uint_32>(width),
+    static_cast<png::uint_32>(height)
+  };
+    
+  for (auto & elt: elts) {
+    img.set_pixel(elt.j, elt.i, cmap(elt.value));
+  }
+
+  img.write(img_str);
 }
