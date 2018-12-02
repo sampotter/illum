@@ -62,7 +62,7 @@ struct job_params {
     }
 
     if (config["radiosity"]) {
-      params.do_radiosity = config["radiosity"].as<bool>();
+      params.radiosity = config["radiosity"].as<bool>();
     }
 
     if (config["gs_steps"]) {
@@ -170,7 +170,7 @@ struct job_params {
   opt_t<std::string> horizon_obj_file;
   opt_t<std::string> therm_stats_file;
 
-  opt_t<bool> do_radiosity;
+  opt_t<bool> radiosity;
   opt_t<bool> print_residual;
   opt_t<bool> thermal;
   opt_t<bool> quiet;
@@ -220,7 +220,7 @@ struct job_params {
          << "therm_stats_file: " << (
            therm_stats_file ? *therm_stats_file : "N/A")
          << endl
-         << "radiosity: " << *do_radiosity << endl
+         << "radiosity: " << *radiosity << endl
          << "print_residual: " << *print_residual << endl
          << "thermal: " << *thermal << endl
          << "quiet: " << *quiet << endl
@@ -381,7 +381,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
 
   arma::sp_mat F;
 
-  if (*params.do_radiosity) {
+  if (*params.radiosity) {
     timed("- assembling form factor matrix", [&] () {
       F = context.compute_F(*params.albedo);
       std::cout << " [nnz = " << F.n_nonzero << "]";
@@ -416,7 +416,7 @@ void do_radiosity_task(job_params & params, illum_context & context) {
       std::cout << " [mean: " << arma::mean(rad) << " W/m^2]";
     });
 
-    if (*params.do_radiosity) {
+    if (*params.radiosity) {
       arma::sp_mat L_t = (arma::speye(nfaces, nfaces) - arma::trimatl(F)).t();
       arma::sp_mat U = -arma::trimatu(F);
 
@@ -721,8 +721,8 @@ int main(int argc, char * argv[]) {
     params.nphi = args["nphi"].as<int>();
   }
 
-  if (!params.do_radiosity || args.count("do_radiosity")) {
-    params.do_radiosity = args["radiosity"].as<bool>();
+  if (!params.radiosity || args.count("radiosity")) {
+    params.radiosity = args["radiosity"].as<bool>();
   }
 
   if (!params.gs_steps || args.count("gs_steps")) {
