@@ -73,7 +73,17 @@ obj_util::get_objects(
       normals[3*i0.vertex_index + 1],
       normals[3*i0.vertex_index + 2]
     };
-    if (n*n0 < 0) {
+    Vector3 n1 {
+      normals[3*i1.vertex_index],
+      normals[3*i1.vertex_index + 1],
+      normals[3*i1.vertex_index + 2]
+    };
+    Vector3 n2 {
+      normals[3*i2.vertex_index],
+      normals[3*i2.vertex_index + 1],
+      normals[3*i2.vertex_index + 2]
+    };
+    if (n*(n0 + n1 + n2) < 0) {
       n = -n;
     }
 
