@@ -37,8 +37,6 @@ struct illum_context {
     horizon_obj_path = path;
   }
 
-private:
-  
   std::vector<Object *> objects;
   std::vector<Object *> bvh_objects;
   BVH bvh;

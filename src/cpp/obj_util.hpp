@@ -6,7 +6,7 @@
 
 namespace obj_util {
 
-std::vector<Object *> get_objects(const char * path, int shape_index);
+std::vector<Object *> get_objects(const char * path, int shape_index = 0);
 
 }
 
