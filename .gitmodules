@@ -19,6 +19,3 @@
 [submodule "src/cpp/png++"]
 	path = src/cpp/png++
 	url = https://github.com/sampotter/pngpp
-[submodule "src/cpp/nanoflann"]
-	path = src/cpp/nanoflann
-	url = https://github.com/sampotter/nanoflann

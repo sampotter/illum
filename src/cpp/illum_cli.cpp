@@ -6,6 +6,8 @@
 #include "arma_util.hpp"
 #include "constants.hpp"
 #include "illum.hpp"
+#include "kdtree.hpp"
+#include "obj_util.hpp"
 #include "thermal.hpp"
 #include "timer.hpp"
 
@@ -40,6 +42,10 @@ struct job_params {
 
     if (config["path"]) {
       params.path = config["path"].as<std::string>();
+    }
+
+    if (config["fine"]) {
+      params.fine = config["fine"].as<std::string>();
     }
 
     if (config["offset"]) {
@@ -155,6 +161,7 @@ struct job_params {
 
   opt_t<std::string> task;
   opt_t<std::string> path;
+  opt_t<std::string> fine;
 
   opt_t<double> offset;
   opt_t<double> theta_eps;
@@ -502,11 +509,37 @@ void do_radiosity_task(job_params const & params, illum_context & context)
   }
 }
 
+void do_residuals_task(job_params const & params, illum_context & context)
+{
+  (void) params;
+  
+  points_t centroids;
+  centroids.reserve(context.get_num_faces());
+  for (Object * object: context.objects) {
+    centroids.push_back(static_cast<Tri *>(object)->getCentroid());
+  }
+
+  kdtree_t kdtree {centroids};
+
+  auto p = centroids[0];
+  size_t k = 10;
+  size_t I[10];
+  num_t D_sq[10];
+  size_t valid = kdtree.query(p, k, I, D_sq);
+
+  for (size_t i = 0; i < valid; ++i) {
+    std::cout << "i = " << I[i] << ", "
+              << "p = " << centroids[I[i]] << ", "
+              << "dist_sq = " << D_sq[i] << std::endl;
+  }
+}
+
 int main(int argc, char * argv[]) {
   std::set<std::string> tasks = {
     "form_factors",
     "horizons",
-    "radiosity"
+    "radiosity",
+    "residuals"
   };
 
   auto tasks_to_string = [&] () {
@@ -516,8 +549,8 @@ int main(int argc, char * argv[]) {
   };
 
   cxxopts::Options options(
-	// boost::filesystem::path {std::string(argv[0])}.filename().c_str(),
-    argv[0],
+	boost::filesystem::path {std::string(argv[0])}.filename().c_str(),
+    // argv[0],
     ("Available tasks:\n\n" + tasks_to_string()).c_str());
 
   options.add_options()
@@ -537,7 +570,12 @@ int main(int argc, char * argv[]) {
     )
     (
       "path",
-      "Path to input OBJ file",
+      "Path to input OBJ file (also used coarse mesh for `residuals' task)",
+      cxxopts::value<std::string>()
+    )
+    (
+      "fine",
+      "Path to fine mesh for `residuals' task",
       cxxopts::value<std::string>()
     )
     (
@@ -712,6 +750,10 @@ int main(int argc, char * argv[]) {
     }
   }
 
+  if (!params.fine && args.count("fine")) {
+    params.fine = args["fine"].as<std::string>();
+  }
+
   if (!params.offset || args.count("offset")) {
     params.offset = args["offset"].as<double>();
   }
@@ -859,5 +901,7 @@ int main(int argc, char * argv[]) {
     do_horizons_task(params, context);
   } else if (*params.task == "radiosity") {
     do_radiosity_task(params, context);
+  } else if (*params.task == "residuals") {
+    do_residuals_task(params, context);
   }
 }
