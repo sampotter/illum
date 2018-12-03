@@ -9,6 +9,7 @@
 #include "obj_util.hpp"
 #include "sp_inds.hpp"
 
+#include <nanoflann.hpp>
 #if USE_TBB
 #  include <tbb/tbb.h>
 #endif
