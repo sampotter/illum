@@ -335,14 +335,14 @@ illum_context::make_horizons(int nphi, double theta_eps, double offset)
     std::vector<Object *> horizon_bvh_objects {
       horizon_objects.begin(), horizon_objects.end()};
     BVH horizon_bvh(&horizon_bvh_objects);
-    auto const compute_horizon = [&] (int j) {
+    auto const compute_horizon = [&] (size_t j) {
       auto tri = static_cast<Tri const *>(objects[j]);
       horizons.col(j) = trace_horizon(tri, horizon_bvh, phis, theta_eps, offset);
     };
 #if USE_TBB
     tbb::parallel_for(size_t(0), size_t(num_faces), compute_horizon);
 #else
-    for (int j = 0; j < num_faces; ++j) {
+    for (size_t j = 0; j < num_faces; ++j) {
       compute_horizon(j);
     }
 #endif
@@ -354,7 +354,7 @@ illum_context::make_horizons(int nphi, double theta_eps, double offset)
 #if USE_TBB
     tbb::parallel_for(size_t(0), size_t(num_faces), compute_horizon);
 #else
-    for (int j = 0; j < num_faces; ++j) {
+    for (size_t j = 0; j < num_faces; ++j) {
       compute_horizon(j);
     }
 #endif
