@@ -1,0 +1,53 @@
+NOT FOR AGU
+- input
+- OBJ is the current format
+- useful to have a binary format for triangular mesh? [low priority]
+- useful to allow loading “DEM”, that is arrays of x/y/z positions which are of size NxM; turn that into triangular mesh with implicit cutting into triangles [low priority]
+- visibility methods (67P bug), hybrid version?
+- investigate embree?
+  - build BVH with SAH? (not the same, but this does parallel Kd-tree with SAH: https://github.com/bchoi/ParKD) [real gain expected?]
+  - does it make sense to use “ray packets” to get direct illumination state (at each timestep), given small source (e.g., Sun; not Mars from Phobos) [may speed up direct illum]
+- culling based on location/pointing of two faces: possible to extend to triangle groups (e.g., work at higher-level bounding boxes with a octree kind of thing)
+- throw a warning when building horizon map
+- BRDF with multi-pass treatment?
+- O(N) direct method
+  - given N nodes, reorder vertices to find optimal clustering to split and reduce comm between nodes
+- evaluate/step it with finer timestep than direct illumination? [may not make any difference if dt small enough]
+  - Erwan will talk to Norbert first
+- think about implementing sources like Mars (reflection of sunlight;
+  thermal emission of its own): separately like sunlight currently, or
+  as moving triangular meshes with own albedo/emission?
+- running sum of light contributions from every point to every other
+  point---dump it at the end of the run? (an idea---need to check)
+- try better form factors?
+
+FOR AGU
+- read in external file with initial state for thermal model (e.g.,
+  from checkpoint or last output from previous run): both parameters
+  (static: TI, etc.) and values (whole-profile temperature)
+- dump the entire thermal model and be able to read in the entire
+  thermal model
+  - human readable nice?
+- *bootstrapping thermal*---send Erwan a script to run it
+- *GPU: optimize the horizon map lookup using min/max or some other tricks*
+- would be good to allow user selection of outputs: for each of a
+  number of fields (illumination, surface temperature, whole-profile
+  temperature), give temporal frequency (every timestep, modulo N,
+  avg/max/min, input list of timestep indices, last N), and perhaps
+  which subset of points to output (list of indices; default: all)
+- flexible naming for output e.g. "file.dat" overwrites, "file*.dat"
+  writes w/ format for time step---this allows check-pointing
+- *two different OBJs* for crater
+
+GOAL
+- comparison of convergences for Vesta and Ceres in bootstrapping
+  thermal model---do they converge with different rates?
+
+MAYBE FOR AGU
+- intel MKL for:
+  - MPI
+  - allow inversion with MPI
+  - allow direct illumination with MPI ? (if it makes sense given everything needs to be re communicated)
+
+THINGS I NEED FROM ERWAN
+- a sequence of sun positions for Ceres and Vesta
